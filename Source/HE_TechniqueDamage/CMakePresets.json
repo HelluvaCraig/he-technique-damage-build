@@ -9,11 +9,11 @@
     {
       "name": "release",
       "displayName": "Release - MSVC + vcpkg",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
