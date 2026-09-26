@@ -41,7 +41,7 @@ namespace
         }
 
         auto* magicTarget = a_actor->AsMagicTarget();
-        const auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
+        auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
         if (!effects) {
             return false;
         }
