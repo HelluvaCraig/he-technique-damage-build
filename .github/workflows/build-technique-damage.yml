@@ -10,13 +10,24 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults:
       run:
         working-directory: Source/HE_TechniqueDamage
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify compiler
+        shell: pwsh
+        run: |
+          where.exe cl
+          cl 2>&1 | Select-Object -First 3
 
       - name: Configure
         shell: pwsh
