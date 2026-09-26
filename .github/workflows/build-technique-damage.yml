@@ -1,0 +1,43 @@
+name: Build HE Technique Damage
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Source/HE_TechniqueDamage/**'
+      - '.github/workflows/build-technique-damage.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Source/HE_TechniqueDamage
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          cmake --preset release
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build --preset release
+
+      - name: Stage DLL
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '..\..\artifact\SKSE\Plugins' | Out-Null
+          Copy-Item 'build\release\HE_TechniqueDamage.dll' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.dll'
+          if (Test-Path 'build\release\HE_TechniqueDamage.pdb') {
+            Copy-Item 'build\release\HE_TechniqueDamage.pdb' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.pdb'
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HE_TechniqueDamage-v0.1.0
+          path: artifact
