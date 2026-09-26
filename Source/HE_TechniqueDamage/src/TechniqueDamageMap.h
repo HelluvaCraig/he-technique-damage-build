@@ -15,7 +15,7 @@ struct TechniqueDamageDefinition
 // tierMultiplier is the WHOLE-MOVE budget. The replacement layer applies
 // tierMultiplier / contacts to each real Precision collision. Skyrim/Precision
 // still selects the attacking weapon/hand for weapon contacts.
-inline constexpr std::array<TechniqueDamageDefinition, 34> kTechniqueDamageDefinitions = {{
+inline constexpr std::array<TechniqueDamageDefinition, 33> kTechniqueDamageDefinitions = {{
     { 0x808, 4.5f,  2, "Continuous Slash" },
     { 0x80C, 7.0f, 16, "Twinfang Dance" },
     { 0x80F, 7.0f,  1, "Hawkfall Dance" },
@@ -49,5 +49,4 @@ inline constexpr std::array<TechniqueDamageDefinition, 34> kTechniqueDamageDefin
     { 0x8B0, 7.0f,  2, "Sanguine Pursuit" },
     { 0x8B8, 4.5f,  1, "Knifehand Strike" },
     { 0x8B9, 7.0f,  1, "Arcane Impetus" },
-    { 0x8C0,10.0f,  4, "Unyielding Lash" },
 }};
