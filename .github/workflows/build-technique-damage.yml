@@ -3,7 +3,6 @@ name: Build HE Technique Damage
 on:
   workflow_dispatch:
   pull_request:
-  push:
     paths:
       - 'Source/HE_TechniqueDamage/**'
       - '.github/workflows/build-technique-damage.yml'
@@ -29,14 +28,27 @@ jobs:
           where.exe cl
           cl 2>&1 | Select-Object -First 3
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}\vcpkg-binary-cache
+            C:\vcpkg\downloads
+          key: vcpkg-commonlibsse-ng-ae-3.7.0-x64-static-md-v1
+
       - name: Configure
         shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
         run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           $env:VCPKG_ROOT = 'C:\vcpkg'
           cmake --preset release
 
       - name: Build
         shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
         run: cmake --build --preset release
 
       - name: Stage DLL
