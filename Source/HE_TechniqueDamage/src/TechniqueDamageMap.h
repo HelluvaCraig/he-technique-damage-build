@@ -27,7 +27,7 @@ inline constexpr std::array<TechniqueDamageDefinition, 33> kTechniqueDamageDefin
     { 0x82E, 7.0f,  7, "White Wolf Dance" },
     { 0x831, 7.0f,  6, "Soul Dance" },
     { 0x837, 4.5f,  1, "Reaver's Retreat" },
-    { 0x843,10.0f,  8, "Storm Fist" },
+    { 0x843,10.0f, 11, "Storm Fist" },
     { 0x845,10.0f,  6, "Worldshaker" },
     { 0x84B, 7.0f,  9, "Relentless Rush" },
     { 0x84C, 7.0f, 10, "Predator's Pursuit" },
