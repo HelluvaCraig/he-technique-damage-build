@@ -618,8 +618,8 @@ namespace
                     g_lastMagicActivationTime = std::chrono::steady_clock::now();
                     g_lastMagicActivationStone = def->localFormID;
 
-                    ConfigureRepresentativeMagicDamage(player, *def);
-
+                    // v0.3.1: guessed payload mutation disabled while we identify
+                    // the actual damaging MGEFs from runtime apply events.
                     ChargeMagicTechniqueCost(
                         player,
                         *def,
@@ -630,13 +630,41 @@ namespace
             }
 
             if (IsRepresentativeMagicTraceStone(def->localFormID)) {
-                SKSE::log::info(
-                    "[MAGIC HIT TRACE] Technique={} stone={:03X} effect={:08X} target={:08X} markerActive={}",
-                    def->name,
-                    def->localFormID,
-                    a_event->magicEffect,
-                    target->GetFormID(),
-                    TechniqueMarkerActive(player));
+                auto* mgef = RE::TESForm::LookupByID<RE::EffectSetting>(a_event->magicEffect);
+
+                if (mgef) {
+                    const char* editorID = mgef->GetFormEditorID();
+                    const char* effectName = mgef->GetName();
+
+                    SKSE::log::info(
+                        "[MAGIC MGEF TRACE] Technique={} stone={:03X} target={:08X} "
+                        "effectPlugin={} effectLocal={:06X} effectRuntime={:08X} "
+                        "editor={} name={} archetype={} primaryAV={} resistAV={} "
+                        "detrimental={} hostile={} baseCost={:.3f} projectile={:08X} explosion={:08X}",
+                        def->name,
+                        def->localFormID,
+                        target->GetFormID(),
+                        GetSourcePlugin(mgef),
+                        GetLocalFormID(mgef),
+                        mgef->GetFormID(),
+                        editorID ? editorID : "",
+                        effectName ? effectName : "",
+                        static_cast<std::uint32_t>(mgef->data.archetype),
+                        static_cast<std::uint32_t>(mgef->data.primaryAV),
+                        static_cast<std::uint32_t>(mgef->data.resistVariable),
+                        mgef->IsDetrimental(),
+                        mgef->IsHostile(),
+                        mgef->data.baseCost,
+                        mgef->data.projectileBase ? mgef->data.projectileBase->GetFormID() : 0,
+                        mgef->data.explosion ? mgef->data.explosion->GetFormID() : 0);
+                } else {
+                    SKSE::log::info(
+                        "[MAGIC MGEF TRACE] Technique={} stone={:03X} effect={:08X} target={:08X} effectLookup=NOT_FOUND",
+                        def->name,
+                        def->localFormID,
+                        a_event->magicEffect,
+                        target->GetFormID());
+                }
             }
 
             return RE::BSEventNotifyControl::kContinue;
@@ -961,6 +989,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.0 Magic damage proof loaded");
+    SKSE::log::info("HE Technique Damage v0.3.1 Magic MGEF identification trace loaded");
     return true;
 }
