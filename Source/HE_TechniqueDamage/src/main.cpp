@@ -24,6 +24,11 @@ namespace
     constexpr RE::FormID kRadiantTriplecutSpell2LocalID = 0x0BA99;
     constexpr RE::FormID kRadiantTriplecutSpell3LocalID = 0x0BA98;
 
+    constexpr RE::FormID kMoonlitCleaveDamageSpellLocalID = 0x0BA1B;
+    constexpr RE::FormID kMoonlitSeveranceSpell1LocalID = 0x0BA0D;
+    constexpr RE::FormID kMoonlitSeveranceSpell2LocalID = 0x0BA0E;
+    constexpr RE::FormID kMoonshardSigilDamageSpellLocalID = 0x0BA70;
+
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
     RE::EffectSetting* g_magicCandidateSecondary = nullptr;
@@ -40,6 +45,11 @@ namespace
     RE::SpellItem* g_radiantTriplecutSpell1 = nullptr;
     RE::SpellItem* g_radiantTriplecutSpell2 = nullptr;
     RE::SpellItem* g_radiantTriplecutSpell3 = nullptr;
+
+    RE::SpellItem* g_moonlitCleaveDamageSpell = nullptr;
+    RE::SpellItem* g_moonlitSeveranceSpell1 = nullptr;
+    RE::SpellItem* g_moonlitSeveranceSpell2 = nullptr;
+    RE::SpellItem* g_moonshardSigilDamageSpell = nullptr;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -401,6 +411,32 @@ namespace
             configured = one && two && three;
             break;
         }
+
+        case 0x829:  // Moonlit Cleave: one unique Moonlight Blast projectile.
+            configured = SetSpellEffectMagnitude(
+                g_moonlitCleaveDamageSpell,
+                0,
+                scaledBudget,
+                "Moonlit Cleave / Moonlight Blast");
+            break;
+
+        case 0x87B: {  // Moonlit Severance: two unique magical slices share one Expert budget.
+            const float perSlice = scaledBudget / 2.0f;
+            const bool one = SetSpellEffectMagnitude(
+                g_moonlitSeveranceSpell1, 0, perSlice, "Moonlit Severance / slice 1");
+            const bool two = SetSpellEffectMagnitude(
+                g_moonlitSeveranceSpell2, 0, perSlice, "Moonlit Severance / slice 2");
+            configured = one && two;
+            break;
+        }
+
+        case 0x87D:  // Moonshard Sigil: one unique Needle Piercer magic hit.
+            configured = SetSpellEffectMagnitude(
+                g_moonshardSigilDamageSpell,
+                0,
+                scaledBudget,
+                "Moonshard Sigil / Needle Piercer");
+            break;
 
         default:
             return;
@@ -908,6 +944,15 @@ namespace
         g_radiantTriplecutSpell3 = dataHandler->LookupForm<RE::SpellItem>(
             kRadiantTriplecutSpell3LocalID, kRimSkillsPlugin);
 
+        g_moonlitCleaveDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kMoonlitCleaveDamageSpellLocalID, kRimSkillsPlugin);
+        g_moonlitSeveranceSpell1 = dataHandler->LookupForm<RE::SpellItem>(
+            kMoonlitSeveranceSpell1LocalID, kRimSkillsPlugin);
+        g_moonlitSeveranceSpell2 = dataHandler->LookupForm<RE::SpellItem>(
+            kMoonlitSeveranceSpell2LocalID, kRimSkillsPlugin);
+        g_moonshardSigilDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kMoonshardSigilDamageSpellLocalID, kRimSkillsPlugin);
+
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
         g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
         g_magicCandidateSecondary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidateSecondaryLocalID, kCooldownPlugin);
@@ -928,6 +973,13 @@ namespace
             g_radiantTriplecutSpell1 ? "OK" : "MISSING",
             g_radiantTriplecutSpell2 ? "OK" : "MISSING",
             g_radiantTriplecutSpell3 ? "OK" : "MISSING");
+
+        SKSE::log::info(
+            "Direct Magic batch spells: MoonlitCleave={} MoonlitSeverance={}/{} Moonshard={}",
+            g_moonlitCleaveDamageSpell ? "OK" : "MISSING",
+            g_moonlitSeveranceSpell1 ? "OK" : "MISSING",
+            g_moonlitSeveranceSpell2 ? "OK" : "MISSING",
+            g_moonshardSigilDamageSpell ? "OK" : "MISSING");
         if (g_techniqueMarker) {
             SKSE::log::info("Technique marker resolved runtimeForm={:08X}", g_techniqueMarker->GetFormID());
         } else {
@@ -1006,6 +1058,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.3 Dragonfire total-budget correction loaded");
+    SKSE::log::info("HE Technique Damage v0.3.4 direct Magic rollout batch loaded");
     return true;
 }
