@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.2.4-magic-marker-polling-proof
+          name: HE_TechniqueDamage-v0.2.5-safe-rollback
           path: artifact
