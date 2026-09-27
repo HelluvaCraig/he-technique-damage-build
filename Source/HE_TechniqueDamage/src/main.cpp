@@ -110,6 +110,59 @@ namespace
 
     std::vector<TempestDamageEffectRef> g_tempestCrescentDamageEffects;
 
+    struct BatchMagicPayloadKey
+    {
+        const char* effectPlugin;
+        RE::FormID effectLocalID;
+    };
+
+    struct BatchMagicPayloadRef
+    {
+        RE::Effect* effect{ nullptr };
+        float nativeMagnitude{ 0.0f };
+        RE::FormID spellFormID{ 0 };
+        RE::FormID effectFormID{ 0 };
+    };
+
+    struct BatchMagicPayloadResolved
+    {
+        BatchMagicPayloadKey key{};
+        std::vector<BatchMagicPayloadRef> refs;
+        float representativeAbsMagnitude{ 0.0f };
+    };
+
+    struct BatchMagicPayloadUse
+    {
+        const char* effectPlugin;
+        RE::FormID effectLocalID;
+        float expectedPerTarget{ 1.0f };
+    };
+
+    inline const std::array<BatchMagicPayloadKey, 20> kBatchMagicPayloadKeys = {{
+        { kEldenSkyrimPlugin, 0x000B1D },  // Frostbreak - Frost Stomp
+        { kRimSkillsPlugin,    0x00B34C }, // Honed Bolt - location strike
+        { kRimSkillsPlugin,    0x00B34E }, // Honed Bolt - bolt
+        { kRimSkillsPlugin,    0x000ACB }, // Avalanche - impact blast
+        { kRimSkillsPlugin,    0x00B3C6 }, // Gale/Psionic - Vacuum impact
+        { kRimSkillsPlugin,    0x000E3F }, // Gale/Psionic - travelling damage
+        { kRimSkillsPlugin,    0x000D9E }, // Titan Spear
+        { kRimSkillsPlugin,    0x00B5E2 }, // Lionfire / Ember / Inferno flame wave
+        { kRimSkillsPlugin,    0x000E88 }, // Runic Disruption
+        { kRimSkillsPlugin,    0x000C2E }, // Fire elemental impact
+        { kRimSkillsPlugin,    0x000F5F }, // Fire Storm 100
+        { kRimSkillsPlugin,    0x000F60 }, // Fire Storm 65
+        { kRimSkillsPlugin,    0x000F61 }, // Fire Storm 25
+        { kRimSkillsPlugin,    0x00B47B }, // Stormwyrm shock damage
+        { kRimSkillsPlugin,    0x00B3EA }, // Stormwyrm bolt explosion
+        { kRimSkillsPlugin,    0x00B414 }, // Wyrmforce skewer explosion
+        { kRimSkillsPlugin,    0x00B777 }, // Judgment Arc
+        { kRimSkillsPlugin,    0x00B46C }, // Runic Might drain
+        { kRimSkillsPlugin,    0x00B730 }, // Flamewake elemental shock
+        { kRimSkillsPlugin,    0x00B753 }, // Frostwake elemental shock
+    }};
+
+    std::vector<BatchMagicPayloadResolved> g_batchMagicPayloads;
+
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
     bool g_magicEffectSinkRegistered = false;
@@ -418,6 +471,151 @@ namespace
             before,
             effect->effectItem.magnitude);
         return true;
+    }
+
+    BatchMagicPayloadResolved* FindBatchMagicPayload(const char* a_effectPlugin, RE::FormID a_effectLocalID)
+    {
+        for (auto& payload : g_batchMagicPayloads) {
+            if (payload.key.effectLocalID == a_effectLocalID &&
+                std::string_view(payload.key.effectPlugin) == std::string_view(a_effectPlugin)) {
+                return std::addressof(payload);
+            }
+        }
+        return nullptr;
+    }
+
+    void ResolveBatchMagicPayloads(RE::TESDataHandler* a_dataHandler)
+    {
+        g_batchMagicPayloads.clear();
+        if (!a_dataHandler) {
+            return;
+        }
+
+        for (const auto& key : kBatchMagicPayloadKeys) {
+            BatchMagicPayloadResolved resolved{};
+            resolved.key = key;
+
+            for (auto* spell : a_dataHandler->GetFormArray<RE::SpellItem>()) {
+                if (!spell) {
+                    continue;
+                }
+
+                const auto* spellFile = spell->GetFile();
+                if (!spellFile) {
+                    continue;
+                }
+
+                const std::string_view spellPlugin = spellFile->GetFilename();
+                if (spellPlugin != kRimSkillsPlugin && spellPlugin != kEldenSkyrimPlugin) {
+                    continue;
+                }
+
+                for (auto* effect : spell->effects) {
+                    if (!effect || !effect->baseEffect) {
+                        continue;
+                    }
+
+                    auto* baseEffect = effect->baseEffect;
+                    const auto* effectFile = baseEffect->GetFile();
+                    if (!effectFile || std::string_view(effectFile->GetFilename()) != key.effectPlugin) {
+                        continue;
+                    }
+
+                    const RE::FormID localID = effectFile->IsLight() ?
+                        (baseEffect->GetFormID() & 0x00000FFF) :
+                        (baseEffect->GetFormID() & 0x00FFFFFF);
+                    if (localID != key.effectLocalID) {
+                        continue;
+                    }
+
+                    resolved.refs.push_back({
+                        effect,
+                        effect->effectItem.magnitude,
+                        spell->GetFormID(),
+                        baseEffect->GetFormID()
+                    });
+                    resolved.representativeAbsMagnitude = std::max(
+                        resolved.representativeAbsMagnitude,
+                        std::fabs(effect->effectItem.magnitude));
+                }
+            }
+
+            SKSE::log::info(
+                "[BATCH MAGIC RESOLVE] effectPlugin={} effectLocal={:06X} refs={} representativeAbsMagnitude={:.3f}",
+                key.effectPlugin,
+                key.effectLocalID,
+                resolved.refs.size(),
+                resolved.representativeAbsMagnitude);
+
+            g_batchMagicPayloads.push_back(std::move(resolved));
+        }
+    }
+
+    bool ConfigureBatchMagicPayloadGroup(
+        float a_scaledBudget,
+        std::initializer_list<BatchMagicPayloadUse> a_uses,
+        const char* a_label,
+        float a_budgetShare = 1.0f)
+    {
+        float nativeWeightedTotal = 0.0f;
+        bool allResolved = true;
+
+        for (const auto& use : a_uses) {
+            auto* payload = FindBatchMagicPayload(use.effectPlugin, use.effectLocalID);
+            if (!payload || payload->refs.empty() || payload->representativeAbsMagnitude <= 0.0001f) {
+                SKSE::log::warn(
+                    "[BATCH MAGIC CONFIG] {} unresolved payload {}:{:06X}",
+                    a_label,
+                    use.effectPlugin,
+                    use.effectLocalID);
+                allResolved = false;
+                continue;
+            }
+            nativeWeightedTotal += payload->representativeAbsMagnitude * use.expectedPerTarget;
+        }
+
+        if (nativeWeightedTotal <= 0.0001f) {
+            return false;
+        }
+
+        const float targetBudget = a_scaledBudget * a_budgetShare;
+        const float scale = targetBudget / nativeWeightedTotal;
+
+        for (const auto& use : a_uses) {
+            auto* payload = FindBatchMagicPayload(use.effectPlugin, use.effectLocalID);
+            if (!payload) {
+                continue;
+            }
+
+            for (auto& ref : payload->refs) {
+                if (!ref.effect) {
+                    continue;
+                }
+                const float before = ref.effect->effectItem.magnitude;
+                ref.effect->effectItem.magnitude = ref.nativeMagnitude * scale;
+                SKSE::log::info(
+                    "[BATCH MAGIC BALANCE] {} spell={:08X} effect={:08X} native={:.3f} before={:.3f} after={:.3f} expectedPerTarget={:.2f} scale={:.5f}",
+                    a_label,
+                    ref.spellFormID,
+                    ref.effectFormID,
+                    ref.nativeMagnitude,
+                    before,
+                    ref.effect->effectItem.magnitude,
+                    use.expectedPerTarget,
+                    scale);
+            }
+        }
+
+        SKSE::log::info(
+            "[BATCH MAGIC BUDGET] {} scaledBudget={:.3f} budgetShare={:.3f} targetBudget={:.3f} nativeWeightedTotal={:.3f} scale={:.5f} resolved={}",
+            a_label,
+            a_scaledBudget,
+            a_budgetShare,
+            targetBudget,
+            nativeWeightedTotal,
+            scale,
+            allResolved);
+        return allResolved;
     }
 
     void ResolveTempestCrescentDamagePayloads(RE::TESDataHandler* a_dataHandler)
@@ -780,6 +978,166 @@ namespace
             configured = one && three && four;
             break;
         }
+
+        case 0x809:  // Frostbreak: one dedicated frost-stomp payload; slow remains untouched.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kEldenSkyrimPlugin, 0x000B1D, 1.0f } },
+                "Frostbreak");
+            break;
+
+        case 0x86F:  // Honed Bolt: location strike + bolt share the Master budget.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                {
+                    { kRimSkillsPlugin, 0x00B34C, 1.0f },
+                    { kRimSkillsPlugin, 0x00B34E, 1.0f }
+                },
+                "Honed Bolt");
+            break;
+
+        case 0x827:  // Avalanche: dedicated slam blast; external frost/slow stays native.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x000ACB, 1.0f } },
+                "Avalanche");
+            break;
+
+        case 0x82A:  // Gale Sever: six travelling air-blade pulses, each with two damage components.
+        case 0x82B:  // Psionic Reaping uses the same six-pulse payload family.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                {
+                    { kRimSkillsPlugin, 0x00B3C6, 6.0f },
+                    { kRimSkillsPlugin, 0x000E3F, 6.0f }
+                },
+                a_def.localFormID == 0x82A ? "Gale Sever" : "Psionic Reaping");
+            break;
+
+        case 0x835:  // Titan Spear: one summoned spear damage payload.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x000D9E, 1.0f } },
+                "Titan Spear");
+            break;
+
+        case 0x846:  // Lionfire: one flame-wave payload. T1 after batch retier.
+        case 0x89A:  // Ember Infusion shares the flame-wave payload; weapon fire remains native.
+        case 0x8C6:  // Inferno Infusion uses the same wave at T3.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B5E2, 1.0f } },
+                a_def.localFormID == 0x846 ? "Lionfire" :
+                    (a_def.localFormID == 0x89A ? "Ember Infusion" : "Inferno Infusion"));
+            break;
+
+        case 0x855:  // Runic Disruption: one dedicated air/impact blast.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x000E88, 1.0f } },
+                "Runic Disruption");
+            break;
+
+        case 0x856:  // Gravefire: two elemental impacts plus the 100/65/25 fire-storm sequence.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                {
+                    { kRimSkillsPlugin, 0x000C2E, 2.0f },
+                    { kRimSkillsPlugin, 0x000F5F, 1.0f },
+                    { kRimSkillsPlugin, 0x000F60, 1.0f },
+                    { kRimSkillsPlugin, 0x000F61, 1.0f }
+                },
+                "Gravefire");
+            break;
+
+        case 0x875:  // Stormwyrm Spear: three shock contacts plus two bolt-explosion contacts.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                {
+                    { kRimSkillsPlugin, 0x00B47B, 3.0f },
+                    { kRimSkillsPlugin, 0x00B3EA, 2.0f }
+                },
+                "Stormwyrm Spear");
+            break;
+
+        case 0x877:  // Wyrmforce: three raw-draconic skewer explosions per centred target.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B414, 3.0f } },
+                "Wyrmforce");
+            break;
+
+        case 0x897:  // Serpentflame Assault: elemental opener + 100/65/25 storm sequence.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                {
+                    { kRimSkillsPlugin, 0x000C2E, 1.0f },
+                    { kRimSkillsPlugin, 0x000F5F, 1.0f },
+                    { kRimSkillsPlugin, 0x000F60, 1.0f },
+                    { kRimSkillsPlugin, 0x000F61, 1.0f }
+                },
+                "Serpentflame Assault");
+            break;
+
+        case 0x8AF:  // Judgment Arc: one wide Judgment Blast per target.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B777, 1.0f } },
+                "Judgment Arc");
+            break;
+
+        case 0x82C:  // Grave Ember: elemental fire impact; low Ignite DoT remains native.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x000C2E, 1.0f } },
+                "Grave Ember");
+            break;
+
+        case 0x84A: {  // Razorwind Sigil: five air lines share one Expert budget.
+            constexpr float kRazorwindLines = 5.0f;
+            const float perLine = scaledBudget / kRazorwindLines;
+            bool any = false;
+            for (auto& ref : g_tempestCrescentDamageEffects) {
+                if (!ref.effect) {
+                    continue;
+                }
+                ref.effect->effectItem.magnitude = std::copysign(perLine, ref.nativeMagnitude == 0.0f ? 1.0f : ref.nativeMagnitude);
+                any = true;
+                SKSE::log::info(
+                    "[RAZORWIND BALANCE] spell={:08X} effect={:08X} native={:.3f} magnitudeAfter={:.3f} lines={:.0f} totalBudget={:.3f}",
+                    ref.spellFormID,
+                    ref.effectFormID,
+                    ref.nativeMagnitude,
+                    ref.effect->effectItem.magnitude,
+                    kRazorwindLines,
+                    scaledBudget);
+            }
+            configured = any;
+            break;
+        }
+
+        case 0x87E:  // Runic Might: keep its drain/impact package at the new T1 budget.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B46C, 1.0f } },
+                "Runic Might");
+            break;
+
+        case 0x8AA:  // Flamewake: T2 area strike; reserve half the magic budget for its native weapon/hazard package.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B730, 1.0f } },
+                "Flamewake Sigil",
+                0.50f);
+            break;
+
+        case 0x8AC:  // Frostwake mirrors Flamewake and keeps its slow/hazard payload native.
+            configured = ConfigureBatchMagicPayloadGroup(
+                scaledBudget,
+                { { kRimSkillsPlugin, 0x00B753, 1.0f } },
+                "Frostwake Sigil",
+                0.50f);
+            break;
 
         case 0x86D: {  // Tempest Crescent: seven light lines share one Expert budget.
             configured = ConfigureTempestCrescentDamage(scaledBudget);
@@ -1433,6 +1791,7 @@ namespace
         SKSE::log::info(
             "Radiant finisher spell: CarianImpact={}",
             g_radiantCarianImpactSpell ? "OK" : "MISSING");
+        ResolveBatchMagicPayloads(dataHandler);
         ResolveTempestCrescentDamagePayloads(dataHandler);
         ResolveRadiantFinisherDamagePayloads(dataHandler);
 
@@ -1521,6 +1880,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.8 batch retier baseline - normal cooldowns loaded");
+    SKSE::log::info("HE Technique Damage v0.4.9 batch magic normalization loaded");
     return true;
 }
