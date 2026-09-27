@@ -41,6 +41,7 @@ namespace
     constexpr RE::FormID kRadiantBladeDanceSpell120LocalID = 0x0BA37;
     constexpr RE::FormID kRadiantBladeDanceSpell150LocalID = 0x0BA38;
     constexpr RE::FormID kRadiantBladeDanceFinalLocalID = 0x0BA39;
+    constexpr RE::FormID kRadiantCarianImpactSpellLocalID = 0x000B0A;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -75,6 +76,7 @@ namespace
     RE::SpellItem* g_radiantBladeDanceSpell120 = nullptr;
     RE::SpellItem* g_radiantBladeDanceSpell150 = nullptr;
     RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
+    RE::SpellItem* g_radiantCarianImpactSpell = nullptr;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -386,6 +388,54 @@ namespace
         return true;
     }
 
+    void DumpRadiantCarianImpactPayload()
+    {
+        auto* spell = g_radiantCarianImpactSpell;
+        if (!spell) {
+            SKSE::log::warn("[RADIANT FINISHER DUMP] Carian Impact spell unresolved");
+            return;
+        }
+
+        SKSE::log::info(
+            "[RADIANT FINISHER DUMP] spell={:08X} name={} effects={}",
+            spell->GetFormID(),
+            spell->GetName(),
+            spell->effects.size());
+
+        for (std::size_t i = 0; i < spell->effects.size(); ++i) {
+            auto* effect = spell->effects[i];
+            if (!effect) {
+                SKSE::log::info("[RADIANT FINISHER EFFECT] index={} NULL", i);
+                continue;
+            }
+
+            auto* mgef = effect->baseEffect;
+            auto* projectile = mgef ? mgef->data.projectileBase : nullptr;
+            auto* projectileExplosion = projectile ? projectile->data.explosionType : nullptr;
+            auto* directExplosion = mgef ? mgef->data.explosion : nullptr;
+
+            SKSE::log::info(
+                "[RADIANT FINISHER EFFECT] index={} mgef={:08X} name={} magnitude={:.3f} duration={} area={} "
+                "archetype={} primaryAV={} hostile={} detrimental={} projectile={:08X} "
+                "projectileExplosion={:08X} projectileExplosionDamage={:.3f} directExplosion={:08X} directExplosionDamage={:.3f}",
+                i,
+                mgef ? mgef->GetFormID() : 0,
+                mgef ? mgef->GetName() : "",
+                effect->effectItem.magnitude,
+                effect->effectItem.duration,
+                effect->effectItem.area,
+                mgef ? static_cast<std::uint32_t>(mgef->data.archetype) : 0,
+                mgef ? static_cast<std::uint32_t>(mgef->data.primaryAV) : 0,
+                mgef ? mgef->IsHostile() : false,
+                mgef ? mgef->IsDetrimental() : false,
+                projectile ? projectile->GetFormID() : 0,
+                projectileExplosion ? projectileExplosion->GetFormID() : 0,
+                projectileExplosion ? projectileExplosion->data.damage : -1.0f,
+                directExplosion ? directExplosion->GetFormID() : 0,
+                directExplosion ? directExplosion->data.damage : -1.0f);
+        }
+    }
+
     void ConfigureRepresentativeMagicDamage(
         RE::Actor* a_actor,
         const MagicTechniqueDefinition& a_def)
@@ -504,6 +554,8 @@ namespace
         }
 
         case 0x832: {
+            DumpRadiantCarianImpactPayload();
+
             // Actual animation event counts:
             // 30 x1, 60 x3, 80 x3, 120 x3, 150 x1, final x1.
             // Native weighting is therefore (11 * 45) + 120 = 615.
@@ -1080,6 +1132,8 @@ namespace
             kRadiantBladeDanceSpell150LocalID, kRimSkillsPlugin);
         g_radiantBladeDanceFinal = dataHandler->LookupForm<RE::SpellItem>(
             kRadiantBladeDanceFinalLocalID, kRimSkillsPlugin);
+        g_radiantCarianImpactSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantCarianImpactSpellLocalID, kRimSkillsPlugin);
 
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
         g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
@@ -1122,6 +1176,9 @@ namespace
             g_radiantBladeDanceSpell120 ? "OK" : "MISSING",
             g_radiantBladeDanceSpell150 ? "OK" : "MISSING",
             g_radiantBladeDanceFinal ? "OK" : "MISSING");
+        SKSE::log::info(
+            "Radiant finisher spell: CarianImpact={}",
+            g_radiantCarianImpactSpell ? "OK" : "MISSING");
         if (auto* player = RE::PlayerCharacter::GetSingleton()) {
             for (const auto& def : kMagicTechniqueDefinitions) {
                 ConfigureRepresentativeMagicDamage(player, def);
@@ -1207,6 +1264,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.9 Radiant explosion damage diagnostic loaded");
+    SKSE::log::info("HE Technique Damage v0.4.0 Radiant finisher payload diagnostic loaded");
     return true;
 }
