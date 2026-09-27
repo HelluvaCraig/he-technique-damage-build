@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.2.5-safe-rollback
+          name: HE_TechniqueDamage-v0.2.6-magic-candidate-effect-proof
           path: artifact

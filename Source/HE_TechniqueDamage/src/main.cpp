@@ -8,6 +8,8 @@ namespace
     constexpr auto kStonePlugin = "HE Elden Rim - Ash Rings.esp";
     constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
+    constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
+    constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
 
     constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
@@ -15,6 +17,8 @@ namespace
     constexpr RE::FormID kIronfleshLocalID = 0x51B16;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
+    RE::EffectSetting* g_magicCandidatePrimary = nullptr;
+    RE::EffectSetting* g_magicCandidateSecondary = nullptr;
     std::unordered_map<RE::FormID, const TechniqueDamageDefinition*> g_damageByStone;
     std::unordered_map<RE::FormID, const MagicTechniqueDefinition*> g_magicByStone;
     std::unordered_map<RE::FormID, const char*> g_magicActivationBySpell;
@@ -311,6 +315,59 @@ namespace
         }
     };
 
+    class MagicCandidateEffectSink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::TESMagicEffectApplyEvent* a_event,
+            RE::BSTEventSource<RE::TESMagicEffectApplyEvent>*) override
+        {
+            if (!a_event || !a_event->caster || !a_event->target || a_event->magicEffect == 0) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* caster = a_event->caster.get();
+            auto* target = a_event->target.get();
+            if (!caster || !caster->IsPlayerRef() || !target || !target->IsPlayerRef()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const RE::FormID primaryID = g_magicCandidatePrimary ? g_magicCandidatePrimary->GetFormID() : 0;
+            const RE::FormID secondaryID = g_magicCandidateSecondary ? g_magicCandidateSecondary->GetFormID() : 0;
+            if (a_event->magicEffect != primaryID && a_event->magicEffect != secondaryID) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const auto* def = GetEquippedMagicStone(player);
+            if (!def) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const bool primary = a_event->magicEffect == primaryID;
+            SKSE::log::info(
+                "[MAGIC CANDIDATE] Technique={} stone={:03X} effect={:08X} candidate={} target=player",
+                def->name,
+                def->localFormID,
+                a_event->magicEffect,
+                primary ? "0x800-primary" : "0x805-secondary");
+
+            if (primary) {
+                LogMagicCostProof(
+                    player,
+                    *def,
+                    a_event->magicEffect,
+                    "cooldown plugin candidate 0x800");
+            }
+
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
     RE::ActiveEffect* FindActiveEffectByUniqueID(RE::Actor* a_actor, std::uint16_t a_uniqueID)
     {
         if (!a_actor) {
@@ -406,6 +463,13 @@ namespace
             SKSE::log::info("Magic Technique spell-cast diagnostic sink registered");
         }
 
+        if (!g_magicEffectSinkRegistered) {
+            static MagicCandidateEffectSink magicEffectSink;
+            source->AddEventSink<RE::TESMagicEffectApplyEvent>(&magicEffectSink);
+            g_magicEffectSinkRegistered = true;
+            SKSE::log::info("Magic Technique candidate-effect diagnostic sink registered");
+        }
+
         if (!g_activeEffectSinkRegistered) {
             static MagicActiveEffectSink activeEffectSink;
             source->AddEventSink<RE::TESActiveEffectApplyRemoveEvent>(&activeEffectSink);
@@ -460,6 +524,8 @@ namespace
         g_tier3AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kIronfleshLocalID, kSkyrimPlugin);
 
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
+        g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
+        g_magicCandidateSecondary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidateSecondaryLocalID, kCooldownPlugin);
 
         SKSE::log::info("Resolved {}/{} physical Technique Stones", resolved, kTechniqueDamageDefinitions.size());
         SKSE::log::info("Resolved {}/{} Magic/Rune Technique Stones", magicResolved, kMagicTechniqueDefinitions.size());
@@ -474,6 +540,10 @@ namespace
         } else {
             SKSE::log::info("Technique marker NOT resolved");
         }
+        SKSE::log::info(
+            "Magic candidate effects: primary={} secondary={}",
+            g_magicCandidatePrimary ? fmt::format("{:08X}", g_magicCandidatePrimary->GetFormID()) : "MISSING",
+            g_magicCandidateSecondary ? fmt::format("{:08X}", g_magicCandidateSecondary->GetFormID()) : "MISSING");
     }
 
     void RegisterPrecision()
@@ -543,6 +613,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.5 Safe rollback loaded");
+    SKSE::log::info("HE Technique Damage v0.2.6 Magic candidate-effect proof loaded");
     return true;
 }
