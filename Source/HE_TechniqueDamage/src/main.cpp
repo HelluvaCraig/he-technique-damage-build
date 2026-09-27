@@ -276,6 +276,53 @@ namespace
             a_signalFormID);
     }
 
+    void ChargeMagicTechniqueCost(
+        RE::Actor* a_actor,
+        const MagicTechniqueDefinition& a_def,
+        RE::FormID a_signalFormID)
+    {
+        if (!a_actor) {
+            return;
+        }
+
+        float naturalProbeCost = -1.0f;
+        const float adjustedCost = CalculateAlterationAdjustedTechniqueCost(
+            a_actor,
+            a_def,
+            naturalProbeCost);
+
+        const float before = std::max(0.0f, a_actor->GetActorValue(RE::ActorValue::kMagicka));
+        const bool sufficient = before + 0.01f >= adjustedCost;
+        const float charged = std::clamp(adjustedCost, 0.0f, before);
+
+        if (charged > 0.0f) {
+            a_actor->RestoreActorValue(
+                RE::ACTOR_VALUE_MODIFIER::kDamage,
+                RE::ActorValue::kMagicka,
+                -charged);
+        }
+
+        const float after = std::max(0.0f, a_actor->GetActorValue(RE::ActorValue::kMagicka));
+
+        SKSE::log::info(
+            "[MAGIC CHARGE] Technique={} stone={:03X} tier={} baseMagicka={:.1f} "
+            "probe={} naturalProbeCost={:.2f} adjustedCost={:.2f} "
+            "magickaBefore={:.2f} charged={:.2f} magickaAfter={:.2f} sufficient={} "
+            "signal={:08X}",
+            a_def.name,
+            a_def.localFormID,
+            a_def.tier,
+            a_def.baseMagicka,
+            GetAlterationProbeName(a_def.tier),
+            naturalProbeCost,
+            adjustedCost,
+            before,
+            charged,
+            after,
+            sufficient,
+            a_signalFormID);
+    }
+
     class MagicSpellCastSink final : public RE::BSTEventSink<RE::TESSpellCastEvent>
     {
     public:
@@ -357,11 +404,10 @@ namespace
                 primary ? "0x800-primary" : "0x805-secondary");
 
             if (primary) {
-                LogMagicCostProof(
+                ChargeMagicTechniqueCost(
                     player,
                     *def,
-                    a_event->magicEffect,
-                    "cooldown plugin candidate 0x800");
+                    a_event->magicEffect);
             }
 
             return RE::BSEventNotifyControl::kContinue;
@@ -613,6 +659,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.6 Magic candidate-effect proof loaded");
+    SKSE::log::info("HE Technique Damage v0.2.7 Magic Alteration charge proof loaded");
     return true;
 }
