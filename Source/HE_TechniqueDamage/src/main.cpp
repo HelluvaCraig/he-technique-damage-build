@@ -176,6 +176,20 @@ namespace
         return native;
     }
 
+    std::uint8_t GetMagicPhysicalContactCount(const MagicTechniqueDefinition* a_def)
+    {
+        if (!a_def) {
+            return 0;
+        }
+
+        switch (a_def->localFormID) {
+        case 0x832:  // Radiant Blade Dance: seven genuine weapon contacts.
+            return 7;
+        default:
+            return 0;
+        }
+    }
+
     PRECISION_API::PreHitCallbackReturn OnPrecisionPreHit(const PRECISION_API::PrecisionHitData& a_hit)
     {
         PRECISION_API::PreHitCallbackReturn result{};
@@ -185,25 +199,62 @@ namespace
             return result;
         }
 
-        const auto* def = GetEquippedPhysicalStone(attacker);
-        if (!def || def->contacts == 0) {
+        const auto* physicalDef = GetEquippedPhysicalStone(attacker);
+        if (physicalDef && physicalDef->contacts > 0) {
+            const float perContactShare =
+                physicalDef->tierMultiplier / static_cast<float>(physicalDef->contacts);
+
+            // Precision multiplies this modifier into Skyrim's weapon-damage path.
+            // Divide away the animation's native attack-data multiplier so the
+            // Technique starts from the equipped weapon's calculated damage.
+            const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
+            const float precisionMultiplier =
+                std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
+
+            if (ShouldTrace(physicalDef)) {
+                SKSE::log::info(
+                    "[TRACE PRE] {} form={:X} tier={} contacts={} share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
+                    physicalDef->name,
+                    physicalDef->localFormID,
+                    physicalDef->tierMultiplier,
+                    physicalDef->contacts,
+                    perContactShare,
+                    nativeAttackMult,
+                    precisionMultiplier);
+            }
+
+            result.modifiers.push_back({
+                PRECISION_API::PreHitModifier::ModifierType::Damage,
+                PRECISION_API::PreHitModifier::ModifierOperation::Multiplicative,
+                precisionMultiplier
+            });
+
             return result;
         }
 
-        const float perContactShare = def->tierMultiplier / static_cast<float>(def->contacts);
-
-        // Precision multiplies this modifier into Skyrim's weapon-damage path.
-        // Divide away the animation's native attack-data multiplier so the
-        // Technique starts from the equipped weapon's calculated damage.
-        const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
-        const float precisionMultiplier = std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
-
-        if (ShouldTrace(def)) {
-            SKSE::log::info(
-                "[TRACE PRE] {} form={:X} tier={} contacts={} share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
-                def->name, def->localFormID, def->tierMultiplier, def->contacts,
-                perContactShare, nativeAttackMult, precisionMultiplier);
+        // Magic/Rune weapon arts normally preserve their physical weapon contacts.
+        // For explicitly mapped multi-hit hybrids, distribute ONE equipped-weapon
+        // damage budget across all genuine physical contacts so repeated hits do
+        // not multiply the weapon component several times.
+        const auto* magicDef = GetEquippedMagicStone(attacker);
+        const auto magicContacts = GetMagicPhysicalContactCount(magicDef);
+        if (!magicDef || magicContacts == 0) {
+            return result;
         }
+
+        const float perContactShare = 1.0f / static_cast<float>(magicContacts);
+        const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
+        const float precisionMultiplier =
+            std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
+
+        SKSE::log::info(
+            "[MAGIC PHYSICAL PRE] {} stone={:03X} contacts={} weaponBudget=1.0 share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
+            magicDef->name,
+            magicDef->localFormID,
+            magicContacts,
+            perContactShare,
+            nativeAttackMult,
+            precisionMultiplier);
 
         result.modifiers.push_back({
             PRECISION_API::PreHitModifier::ModifierType::Damage,
@@ -222,18 +273,33 @@ namespace
         }
 
         const auto* def = GetEquippedPhysicalStone(attacker);
-        if (!ShouldTrace(def)) {
-            return;
-        }
+        const auto* magicDef = GetEquippedMagicStone(attacker);
+        const auto magicContacts = GetMagicPhysicalContactCount(magicDef);
 
         const float actualAttackMult = a_hit.attackData ? a_hit.attackData->data.damageMult : -1.0f;
         const bool actualLeftAttack = a_hit.attackData ? a_hit.attackData->IsLeftAttack() : false;
         const RE::FormID weaponFormID = a_hit.weapon ? a_hit.weapon->GetFormID() : 0;
 
-        SKSE::log::info(
-            "[TRACE POST] {} form={:X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
-            def->name, def->localFormID, weaponFormID, actualLeftAttack,
-            actualAttackMult, a_hit.totalDamage, a_hit.physicalDamage, a_hit.resistedPhysicalDamage);
+        if (ShouldTrace(def)) {
+            SKSE::log::info(
+                "[TRACE POST] {} form={:X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+                def->name, def->localFormID, weaponFormID, actualLeftAttack,
+                actualAttackMult, a_hit.totalDamage, a_hit.physicalDamage, a_hit.resistedPhysicalDamage);
+            return;
+        }
+
+        if (magicDef && magicContacts > 0) {
+            SKSE::log::info(
+                "[MAGIC PHYSICAL POST] {} stone={:03X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+                magicDef->name,
+                magicDef->localFormID,
+                weaponFormID,
+                actualLeftAttack,
+                actualAttackMult,
+                a_hit.totalDamage,
+                a_hit.physicalDamage,
+                a_hit.resistedPhysicalDamage);
+        }
     }
 
     RE::SpellItem* GetAlterationProbe(std::uint8_t a_tier)
@@ -1186,6 +1252,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.6 Moonshard and Radiant event-count correction loaded");
+    SKSE::log::info("HE Technique Damage v0.3.7 Radiant hybrid physical normalization loaded");
     return true;
 }
