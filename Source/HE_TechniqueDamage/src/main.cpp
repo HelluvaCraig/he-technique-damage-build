@@ -18,8 +18,8 @@ namespace
     constexpr RE::FormID kIronfleshLocalID = 0x51B16;
 
     // v0.3.0 representative Magic damage proof payload spells.
-    constexpr RE::FormID kGaleCrescentDamageSpellLocalID = 0x0BA6C;
-    constexpr RE::FormID kDragonfireSigilDamageSpellLocalID = 0x000E74;
+    constexpr RE::FormID kGaleCrescentDamageSpellLocalID = 0x0B43D;
+    constexpr RE::FormID kDragonfireSigilDamageSpellLocalID = 0x000F27;
     constexpr RE::FormID kRadiantTriplecutSpell1LocalID = 0x0BA97;
     constexpr RE::FormID kRadiantTriplecutSpell2LocalID = 0x0BA99;
     constexpr RE::FormID kRadiantTriplecutSpell3LocalID = 0x0BA98;
@@ -357,30 +357,43 @@ namespace
         bool configured = false;
 
         switch (a_def.localFormID) {
-        case 0x87A:  // Gale Crescent: one magical slice.
+        case 0x87A:  // Gale Crescent: B43D spell -> B43E hostile Health projectile.
             configured = SetSpellEffectMagnitude(
                 g_galeCrescentDamageSpell,
                 0,
                 scaledBudget,
-                "Gale Crescent / VacuumChopSpell2");
+                "Gale Crescent / Solitary Moon blast");
             break;
 
-        case 0x847:  // Dragonfire Sigil: one magic payload + two native weapon contacts.
-            configured = SetSpellEffectMagnitude(
+        case 0x847: {  // Dragonfire Sigil: 40 instant + 4/sec x5 = 60 base total.
+            const float instantDamage = scaledBudget * (40.0f / 60.0f);
+            const float burnPerSecond = scaledBudget / 15.0f;  // remaining 1/3 spread over 5 sec
+
+            const bool instant = SetSpellEffectMagnitude(
                 g_dragonfireSigilDamageSpell,
                 0,
-                scaledBudget,
-                "Dragonfire Sigil / magic payload");
+                instantDamage,
+                "Dragonfire Sigil / Fire Blast");
+            const bool burn = SetSpellEffectMagnitude(
+                g_dragonfireSigilDamageSpell,
+                1,
+                burnPerSecond,
+                "Dragonfire Sigil / Flame Smite burn");
+            configured = instant && burn;
             break;
+        }
 
-        case 0x8A0: {  // Radiant Triplecut: three light blades share one Expert budget.
-            const float perBlade = scaledBudget / 3.0f;
+        case 0x8A0: {  // Radiant Triplecut: native 15/20/25 weighting, total 60.
+            const float blade1 = scaledBudget * (15.0f / 60.0f);
+            const float blade2 = scaledBudget * (20.0f / 60.0f);
+            const float blade3 = scaledBudget * (25.0f / 60.0f);
+
             const bool one = SetSpellEffectMagnitude(
-                g_radiantTriplecutSpell1, 0, perBlade, "Radiant Triplecut / blade 1");
+                g_radiantTriplecutSpell1, 0, blade1, "Radiant Triplecut / blade 1 (D72)");
             const bool two = SetSpellEffectMagnitude(
-                g_radiantTriplecutSpell2, 0, perBlade, "Radiant Triplecut / blade 2");
+                g_radiantTriplecutSpell2, 0, blade2, "Radiant Triplecut / blade 2 (D71)");
             const bool three = SetSpellEffectMagnitude(
-                g_radiantTriplecutSpell3, 0, perBlade, "Radiant Triplecut / blade 3");
+                g_radiantTriplecutSpell3, 0, blade3, "Radiant Triplecut / blade 3 (D72)");
             configured = one && two && three;
             break;
         }
@@ -618,8 +631,8 @@ namespace
                     g_lastMagicActivationTime = std::chrono::steady_clock::now();
                     g_lastMagicActivationStone = def->localFormID;
 
-                    // v0.3.1: guessed payload mutation disabled while we identify
-                    // the actual damaging MGEFs from runtime apply events.
+                    ConfigureRepresentativeMagicDamage(player, *def);
+
                     ChargeMagicTechniqueCost(
                         player,
                         *def,
@@ -989,6 +1002,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.1 Magic MGEF identification trace loaded");
+    SKSE::log::info("HE Technique Damage v0.3.2 corrected Magic damage proof loaded");
     return true;
 }
