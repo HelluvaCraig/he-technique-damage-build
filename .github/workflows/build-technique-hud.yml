@@ -1,0 +1,73 @@
+name: Build HE Technique HUD Sigil
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Source/HE_TechniqueHUD/**'
+      - '.github/workflows/build-technique-hud.yml'
+  push:
+    paths:
+      - 'Source/HE_TechniqueHUD/**'
+      - '.github/workflows/build-technique-hud.yml'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: Source/HE_TechniqueHUD
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download PrismaUI API header
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/PrismaUI-SKSE/example-skse-plugin/main/src/PrismaUI_API.h' -OutFile 'src/PrismaUI_API.h'
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}\vcpkg-binary-cache
+            C:\vcpkg\downloads
+          key: vcpkg-commonlibsse-ng-ae-3.7.0-hud-v1
+
+      - name: Configure
+        shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          cmake --preset release
+
+      - name: Build
+        shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
+        run: cmake --build --preset release
+
+      - name: Stage HUD
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '..\..\artifact\SKSE\Plugins' | Out-Null
+          New-Item -ItemType Directory -Force -Path '..\..\artifact\PrismaUI\views\HE_TechniqueHUD' | Out-Null
+          Copy-Item 'build\release\HE_TechniqueHUD.dll' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.dll'
+          Copy-Item 'package\HE_TechniqueHUD.ini' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.ini'
+          Copy-Item 'ui\index.html' '..\..\artifact\PrismaUI\views\HE_TechniqueHUD\index.html'
+          if (Test-Path 'build\release\HE_TechniqueHUD.pdb') {
+            Copy-Item 'build\release\HE_TechniqueHUD.pdb' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.pdb'
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HE_TechniqueHUD-v5.6.11-layered-sigil
+          path: artifact
