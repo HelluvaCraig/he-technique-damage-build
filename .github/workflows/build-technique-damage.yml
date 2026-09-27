@@ -21,7 +21,7 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
-          $env:VCPKG_ROOT = 'C:\vcpkg'
+          $env:VCPKG_ROOT = 'C:\\vcpkg'
           cmake --preset release
 
       - name: Build
@@ -31,14 +31,14 @@ jobs:
       - name: Stage DLL
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path '..\..\artifact\SKSE\Plugins' | Out-Null
-          Copy-Item 'build\release\HE_TechniqueDamage.dll' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.dll'
-          if (Test-Path 'build\release\HE_TechniqueDamage.pdb') {
-            Copy-Item 'build\release\HE_TechniqueDamage.pdb' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.pdb'
+          New-Item -ItemType Directory -Force -Path '..\\..\\artifact\\SKSE\\Plugins' | Out-Null
+          Copy-Item 'build\\release\\HE_TechniqueDamage.dll' '..\\..\\artifact\\SKSE\\Plugins\\HE_TechniqueDamage.dll'
+          if (Test-Path 'build\\release\\HE_TechniqueDamage.pdb') {
+            Copy-Item 'build\\release\\HE_TechniqueDamage.pdb' '..\\..\\artifact\\SKSE\\Plugins\\HE_TechniqueDamage.pdb'
           }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.1.0
+          name: HE_TechniqueDamage-v0.2.0
           path: artifact
