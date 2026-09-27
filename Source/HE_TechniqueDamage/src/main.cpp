@@ -48,6 +48,10 @@ namespace
     constexpr RE::FormID kRadiantFinisherExtraDamageEffectLocalID = 0x000AFA;
     constexpr float kRadiantFinisherDamageScale = 0.15f;
 
+    // Tempest Crescent: five light-line projectiles share one Tier 2 damage budget.
+    constexpr RE::FormID kTempestCrescentDamageEffectLocalID = 0x000E5B;
+    constexpr float kTempestCrescentLines = 5.0f;
+
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
     RE::EffectSetting* g_magicCandidateSecondary = nullptr;
@@ -94,6 +98,16 @@ namespace
     std::vector<RadiantFinisherEffectRef> g_radiantFinisherDamageEffects;
     RE::BGSExplosion* g_radiantFinisherProjectileExplosion = nullptr;
     float g_radiantFinisherProjectileExplosionNativeDamage = 0.0f;
+
+    struct TempestDamageEffectRef
+    {
+        RE::Effect* effect{ nullptr };
+        float nativeMagnitude{ 0.0f };
+        RE::FormID spellFormID{ 0 };
+        RE::FormID effectFormID{ 0 };
+    };
+
+    std::vector<TempestDamageEffectRef> g_tempestCrescentDamageEffects;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -405,6 +419,85 @@ namespace
         return true;
     }
 
+    void ResolveTempestCrescentDamagePayloads(RE::TESDataHandler* a_dataHandler)
+    {
+        g_tempestCrescentDamageEffects.clear();
+        if (!a_dataHandler) {
+            return;
+        }
+
+        for (auto* spell : a_dataHandler->GetFormArray<RE::SpellItem>()) {
+            if (!spell) {
+                continue;
+            }
+
+            const auto* spellFile = spell->GetFile();
+            if (!spellFile || std::string_view(spellFile->GetFilename()) != kRimSkillsPlugin) {
+                continue;
+            }
+
+            for (auto* effect : spell->effects) {
+                if (!effect || !effect->baseEffect) {
+                    continue;
+                }
+
+                auto* baseEffect = effect->baseEffect;
+                const RE::FormID localID = baseEffect->GetFormID() & 0x00FFFFFF;
+                if (localID != kTempestCrescentDamageEffectLocalID) {
+                    continue;
+                }
+
+                g_tempestCrescentDamageEffects.push_back({
+                    effect,
+                    effect->effectItem.magnitude,
+                    spell->GetFormID(),
+                    baseEffect->GetFormID()
+                });
+
+                SKSE::log::info(
+                    "[TEMPEST RESOLVE] spell={:08X} spellName={} effect={:08X} effectName={} nativeMagnitude={:.3f}",
+                    spell->GetFormID(),
+                    spell->GetName(),
+                    baseEffect->GetFormID(),
+                    baseEffect->GetName(),
+                    effect->effectItem.magnitude);
+            }
+        }
+
+        SKSE::log::info(
+            "[TEMPEST RESOLVE] damageEffectRefs={} expectedLines={:.0f}",
+            g_tempestCrescentDamageEffects.size(),
+            kTempestCrescentLines);
+    }
+
+    bool ConfigureTempestCrescentDamage(float a_scaledBudget)
+    {
+        if (g_tempestCrescentDamageEffects.empty()) {
+            SKSE::log::warn("[TEMPEST BALANCE] no E5B spell payload references resolved");
+            return false;
+        }
+
+        const float perLine = a_scaledBudget / kTempestCrescentLines;
+        for (auto& ref : g_tempestCrescentDamageEffects) {
+            if (!ref.effect) {
+                continue;
+            }
+
+            const float before = ref.effect->effectItem.magnitude;
+            ref.effect->effectItem.magnitude = perLine;
+            SKSE::log::info(
+                "[TEMPEST BALANCE] spell={:08X} effect={:08X} magnitudeBefore={:.3f} native={:.3f} magnitudeAfter={:.3f} totalBudget={:.3f} lines={:.0f}",
+                ref.spellFormID,
+                ref.effectFormID,
+                before,
+                ref.nativeMagnitude,
+                perLine,
+                a_scaledBudget,
+                kTempestCrescentLines);
+        }
+        return true;
+    }
+
     bool IsRadiantFinisherDamageEffectLocalID(RE::FormID a_localID)
     {
         switch (a_localID) {
@@ -684,6 +777,11 @@ namespace
             const bool four = SetSpellEffectMagnitude(
                 g_crimsonSeveranceSpell4, 0, perSlice, "Crimson Severance / slice 4");
             configured = one && three && four;
+            break;
+        }
+
+        case 0x86D: {  // Tempest Crescent: five light lines share one Expert budget.
+            configured = ConfigureTempestCrescentDamage(scaledBudget);
             break;
         }
 
@@ -1315,6 +1413,7 @@ namespace
         SKSE::log::info(
             "Radiant finisher spell: CarianImpact={}",
             g_radiantCarianImpactSpell ? "OK" : "MISSING");
+        ResolveTempestCrescentDamagePayloads(dataHandler);
         ResolveRadiantFinisherDamagePayloads(dataHandler);
 
         if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -1402,6 +1501,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.3 Tempest Crescent mapping diagnostic loaded");
+    SKSE::log::info("HE Technique Damage v0.4.4 Tempest Crescent five-line balance loaded");
     return true;
 }
