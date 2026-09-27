@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.4.2-radiant-finisher-15pct-balance
+          name: HE_TechniqueDamage-v0.4.3-tempest-crescent-mapping-diagnostic
           path: artifact
