@@ -32,6 +32,9 @@ namespace
     bool g_magicEffectSinkRegistered = false;
     bool g_activeEffectSinkRegistered = false;
 
+    std::chrono::steady_clock::time_point g_lastMagicActivationTime{};
+    RE::FormID g_lastMagicActivationStone = 0;
+
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
     {
         if (!a_actor || g_damageByStone.empty()) {
@@ -383,6 +386,41 @@ namespace
         }
     }
 
+    RE::FormID GetLocalFormID(const RE::TESForm* a_form)
+    {
+        if (!a_form) {
+            return 0;
+        }
+
+        const auto* file = a_form->GetFile();
+        if (!file) {
+            return a_form->GetFormID();
+        }
+
+        return file->IsLight() ? (a_form->GetFormID() & 0x00000FFF) : (a_form->GetFormID() & 0x00FFFFFF);
+    }
+
+    std::string_view GetSourcePlugin(const RE::TESForm* a_form)
+    {
+        if (!a_form) {
+            return "<none>";
+        }
+
+        const auto* file = a_form->GetFile();
+        return file ? file->GetFilename() : std::string_view("<dynamic>");
+    }
+
+    bool IsInsideMagicTraceWindow(const MagicTechniqueDefinition* a_def)
+    {
+        if (!a_def || g_lastMagicActivationStone != a_def->localFormID) {
+            return false;
+        }
+
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - g_lastMagicActivationTime).count();
+        return elapsed >= 0 && elapsed <= 5000;
+    }
+
     class MagicCandidateEffectSink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
     {
     public:
@@ -427,6 +465,9 @@ namespace
                     primary ? "0x800-primary" : "0x805-secondary");
 
                 if (primary) {
+                    g_lastMagicActivationTime = std::chrono::steady_clock::now();
+                    g_lastMagicActivationStone = def->localFormID;
+
                     ChargeMagicTechniqueCost(
                         player,
                         *def,
@@ -480,12 +521,12 @@ namespace
             const RE::TESActiveEffectApplyRemoveEvent* a_event,
             RE::BSTEventSource<RE::TESActiveEffectApplyRemoveEvent>*) override
         {
-            if (!a_event || !a_event->isApplied || !a_event->target || !g_techniqueMarker) {
+            if (!a_event || !a_event->isApplied || !a_event->target) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            auto* target = a_event->target.get();
-            if (!target || !target->IsPlayerRef()) {
+            auto* targetRef = a_event->target.get();
+            if (!targetRef) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -499,32 +540,86 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            auto* activeEffect = FindActiveEffectByUniqueID(player, a_event->activeEffectUniqueID);
+            if (targetRef->IsPlayerRef()) {
+                auto* activeEffect = FindActiveEffectByUniqueID(player, a_event->activeEffectUniqueID);
+                if (!activeEffect || !g_techniqueMarker) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                auto* baseEffect = activeEffect->GetBaseObject();
+                if (baseEffect != g_techniqueMarker) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                SKSE::log::info(
+                    "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X} uniqueID={}",
+                    def->name,
+                    def->localFormID,
+                    baseEffect->GetFormID(),
+                    a_event->activeEffectUniqueID);
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (!IsRepresentativeMagicTraceStone(def->localFormID) || !IsInsideMagicTraceWindow(def)) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* targetActor = targetRef->As<RE::Actor>();
+            if (!targetActor) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* activeEffect = FindActiveEffectByUniqueID(targetActor, a_event->activeEffectUniqueID);
             if (!activeEffect) {
                 SKSE::log::info(
-                    "[MAGIC ACTIVE EFFECT] Technique={} uniqueID={} applied=1 activeEffect=NOT_FOUND",
+                    "[MAGIC ACTIVE TRACE] Technique={} target={:08X} uniqueID={} activeEffect=NOT_FOUND",
                     def->name,
+                    targetActor->GetFormID(),
                     a_event->activeEffectUniqueID);
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            auto* baseEffect = activeEffect->GetBaseObject();
-            if (baseEffect != g_techniqueMarker) {
+            auto caster = activeEffect->GetCasterActor();
+            if (!caster || !caster->IsPlayerRef()) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
+            auto* baseEffect = activeEffect->GetBaseObject();
+            if (!baseEffect) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* spell = activeEffect->spell;
+            const char* effectEditorID = baseEffect->GetFormEditorID();
+            const char* spellEditorID = spell ? spell->GetFormEditorID() : "";
+            const char* effectName = baseEffect->GetName();
+            const char* spellName = spell ? spell->GetName() : "";
+
             SKSE::log::info(
-                "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X} uniqueID={}",
+                "[MAGIC ACTIVE TRACE] Technique={} stone={:03X} target={:08X} "
+                "effectPlugin={} effectLocal={:06X} effectRuntime={:08X} effectEditor={} effectName={} "
+                "magnitude={:.3f} duration={:.3f} archetype={} primaryAV={} resistAV={} baseCost={:.3f} "
+                "spellPlugin={} spellLocal={:06X} spellRuntime={:08X} spellEditor={} spellName={}",
                 def->name,
                 def->localFormID,
+                targetActor->GetFormID(),
+                GetSourcePlugin(baseEffect),
+                GetLocalFormID(baseEffect),
                 baseEffect->GetFormID(),
-                a_event->activeEffectUniqueID);
-
-            LogMagicCostProof(
-                player,
-                *def,
-                baseEffect->GetFormID(),
-                "Technique marker active-effect apply");
+                effectEditorID ? effectEditorID : "",
+                effectName ? effectName : "",
+                activeEffect->GetMagnitude(),
+                activeEffect->duration,
+                static_cast<std::uint32_t>(baseEffect->data.archetype),
+                static_cast<std::uint32_t>(baseEffect->data.primaryAV),
+                static_cast<std::uint32_t>(baseEffect->data.resistVariable),
+                baseEffect->data.baseCost,
+                GetSourcePlugin(spell),
+                GetLocalFormID(spell),
+                spell ? spell->GetFormID() : 0,
+                spellEditorID ? spellEditorID : "",
+                spellName ? spellName : "");
 
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -695,6 +790,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.8 Magic hit trace loaded");
+    SKSE::log::info("HE Technique Damage v0.2.9 Magic active-effect trace loaded");
     return true;
 }
