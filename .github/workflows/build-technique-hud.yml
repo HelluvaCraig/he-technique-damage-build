@@ -37,7 +37,7 @@ jobs:
           path: |
             ${{ github.workspace }}\vcpkg-binary-cache
             C:\vcpkg\downloads
-          key: vcpkg-commonlibsse-ng-ae-3.7.0-hud-v1
+          key: vcpkg-commonlibsse-ng-ae-3.7.0-x64-static-md-v1
 
       - name: Configure
         shell: pwsh
