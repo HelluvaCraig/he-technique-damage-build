@@ -59,10 +59,9 @@ namespace
 
     bool ShouldTrace(const TechniqueDamageDefinition* a_def)
     {
-        return a_def &&
-            (a_def->localFormID == 0x80F ||   // Hawkfall Dance
-             a_def->localFormID == 0x843 ||   // Storm Fist
-             a_def->localFormID == 0x845);    // Worldshaker control
+        // Keep diagnostics enabled for every physical Technique during the
+        // contact-count validation pass. This does not change damage.
+        return a_def != nullptr;
     }
 
     float GetNativeAttackDataMultiplier(RE::Actor* a_actor)
