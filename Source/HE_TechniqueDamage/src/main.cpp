@@ -365,9 +365,13 @@ namespace
                 "Gale Crescent / Solitary Moon blast");
             break;
 
-        case 0x847: {  // Dragonfire Sigil: 40 instant + 4/sec x5 = 60 base total.
-            const float instantDamage = scaledBudget * (40.0f / 60.0f);
-            const float burnPerSecond = scaledBudget / 15.0f;  // remaining 1/3 spread over 5 sec
+        case 0x847: {  // Dragonfire Sigil: native payload fires three times.
+            // One Expert/Master budget belongs to the whole Technique, so divide
+            // the native 40 instant + 4/sec x5 shape across all three pulses.
+            constexpr float kDragonfirePulses = 3.0f;
+            const float perPulseBudget = scaledBudget / kDragonfirePulses;
+            const float instantDamage = perPulseBudget * (40.0f / 60.0f);
+            const float burnPerSecond = perPulseBudget / 15.0f;  // remaining 1/3 over 5 sec
 
             const bool instant = SetSpellEffectMagnitude(
                 g_dragonfireSigilDamageSpell,
@@ -1002,6 +1006,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.2 corrected Magic damage proof loaded");
+    SKSE::log::info("HE Technique Damage v0.3.3 Dragonfire total-budget correction loaded");
     return true;
 }
