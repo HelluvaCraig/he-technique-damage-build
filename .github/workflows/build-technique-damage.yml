@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.3.8-radiant-endburst-diagnostic
+          name: HE_TechniqueDamage-v0.3.9-radiant-explosion-damage-diagnostic
           path: artifact
