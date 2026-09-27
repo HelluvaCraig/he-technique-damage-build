@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.3.7-radiant-hybrid-physical-proof
+          name: HE_TechniqueDamage-v0.3.8-radiant-endburst-diagnostic
           path: artifact
