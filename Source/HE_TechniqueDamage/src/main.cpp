@@ -7,6 +7,7 @@ namespace
 {
     constexpr auto kStonePlugin = "HE Elden Rim - Ash Rings.esp";
     constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
+    constexpr auto kRimSkillsPlugin = "EldenSkyrim_RimSkills.esp";
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
@@ -15,6 +16,13 @@ namespace
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
     constexpr RE::FormID kStonefleshLocalID = 0x5AD5D;
     constexpr RE::FormID kIronfleshLocalID = 0x51B16;
+
+    // v0.3.0 representative Magic damage proof payload spells.
+    constexpr RE::FormID kGaleCrescentDamageSpellLocalID = 0x0BA6C;
+    constexpr RE::FormID kDragonfireSigilDamageSpellLocalID = 0x000E74;
+    constexpr RE::FormID kRadiantTriplecutSpell1LocalID = 0x0BA97;
+    constexpr RE::FormID kRadiantTriplecutSpell2LocalID = 0x0BA99;
+    constexpr RE::FormID kRadiantTriplecutSpell3LocalID = 0x0BA98;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -26,6 +34,12 @@ namespace
     RE::SpellItem* g_tier1AlterationProbe = nullptr;
     RE::SpellItem* g_tier2AlterationProbe = nullptr;
     RE::SpellItem* g_tier3AlterationProbe = nullptr;
+
+    RE::SpellItem* g_galeCrescentDamageSpell = nullptr;
+    RE::SpellItem* g_dragonfireSigilDamageSpell = nullptr;
+    RE::SpellItem* g_radiantTriplecutSpell1 = nullptr;
+    RE::SpellItem* g_radiantTriplecutSpell2 = nullptr;
+    RE::SpellItem* g_radiantTriplecutSpell3 = nullptr;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -251,6 +265,142 @@ namespace
         return adjusted;
     }
 
+    const char* GetMagicRankName(std::uint8_t a_tier)
+    {
+        switch (a_tier) {
+        case 1:
+            return "Adept";
+        case 2:
+            return "Expert";
+        case 3:
+            return "Master";
+        default:
+            return "Unknown";
+        }
+    }
+
+    float GetMagicRankBaseDamage(std::uint8_t a_tier)
+    {
+        switch (a_tier) {
+        case 1:
+            return 40.0f;
+        case 2:
+            return 60.0f;
+        case 3:
+            return 80.0f;
+        default:
+            return 0.0f;
+        }
+    }
+
+    float GetAlterationDamageMultiplier(RE::Actor* a_actor, float& a_alterationSkill)
+    {
+        a_alterationSkill = 15.0f;
+        if (a_actor) {
+            if (auto* avOwner = a_actor->AsActorValueOwner()) {
+                a_alterationSkill = avOwner->GetActorValue(RE::ActorValue::kAlteration);
+            }
+        }
+
+        // Technique magic starts at full base output at Alteration 15 and
+        // rises linearly to +60% at Alteration 100.
+        const float normalized = std::clamp((a_alterationSkill - 15.0f) / 85.0f, 0.0f, 1.0f);
+        return 1.0f + (0.60f * normalized);
+    }
+
+    bool SetSpellEffectMagnitude(
+        RE::SpellItem* a_spell,
+        std::size_t a_effectIndex,
+        float a_magnitude,
+        const char* a_label)
+    {
+        if (!a_spell || a_effectIndex >= a_spell->effects.size()) {
+            SKSE::log::warn(
+                "[MAGIC DAMAGE CONFIG] {} unresolved/missing effect index {}",
+                a_label ? a_label : "spell",
+                a_effectIndex);
+            return false;
+        }
+
+        auto* effect = a_spell->effects[a_effectIndex];
+        if (!effect) {
+            SKSE::log::warn(
+                "[MAGIC DAMAGE CONFIG] {} null effect index {}",
+                a_label ? a_label : "spell",
+                a_effectIndex);
+            return false;
+        }
+
+        const float before = effect->effectItem.magnitude;
+        effect->effectItem.magnitude = a_magnitude;
+
+        SKSE::log::info(
+            "[MAGIC DAMAGE PAYLOAD] {} spell={:08X} effectIndex={} effect={:08X} magnitudeBefore={:.2f} magnitudeAfter={:.2f}",
+            a_label ? a_label : "spell",
+            a_spell->GetFormID(),
+            a_effectIndex,
+            effect->baseEffect ? effect->baseEffect->GetFormID() : 0,
+            before,
+            effect->effectItem.magnitude);
+        return true;
+    }
+
+    void ConfigureRepresentativeMagicDamage(
+        RE::Actor* a_actor,
+        const MagicTechniqueDefinition& a_def)
+    {
+        float alterationSkill = 15.0f;
+        const float alterationMult = GetAlterationDamageMultiplier(a_actor, alterationSkill);
+        const float baseBudget = GetMagicRankBaseDamage(a_def.tier);
+        const float scaledBudget = baseBudget * alterationMult;
+
+        bool configured = false;
+
+        switch (a_def.localFormID) {
+        case 0x87A:  // Gale Crescent: one magical slice.
+            configured = SetSpellEffectMagnitude(
+                g_galeCrescentDamageSpell,
+                0,
+                scaledBudget,
+                "Gale Crescent / VacuumChopSpell2");
+            break;
+
+        case 0x847:  // Dragonfire Sigil: one magic payload + two native weapon contacts.
+            configured = SetSpellEffectMagnitude(
+                g_dragonfireSigilDamageSpell,
+                0,
+                scaledBudget,
+                "Dragonfire Sigil / magic payload");
+            break;
+
+        case 0x8A0: {  // Radiant Triplecut: three light blades share one Expert budget.
+            const float perBlade = scaledBudget / 3.0f;
+            const bool one = SetSpellEffectMagnitude(
+                g_radiantTriplecutSpell1, 0, perBlade, "Radiant Triplecut / blade 1");
+            const bool two = SetSpellEffectMagnitude(
+                g_radiantTriplecutSpell2, 0, perBlade, "Radiant Triplecut / blade 2");
+            const bool three = SetSpellEffectMagnitude(
+                g_radiantTriplecutSpell3, 0, perBlade, "Radiant Triplecut / blade 3");
+            configured = one && two && three;
+            break;
+        }
+
+        default:
+            return;
+        }
+
+        SKSE::log::info(
+            "[MAGIC DAMAGE CONFIG] Technique={} stone={:03X} rank={} baseMagicBudget={:.2f} alteration={:.2f} alterationMult={:.4f} scaledMagicBudget={:.2f} configured={}",
+            a_def.name,
+            a_def.localFormID,
+            GetMagicRankName(a_def.tier),
+            baseBudget,
+            alterationSkill,
+            alterationMult,
+            scaledBudget,
+            configured);
+    }
+
     void LogMagicCostProof(
         RE::Actor* a_actor,
         const MagicTechniqueDefinition& a_def,
@@ -467,6 +617,8 @@ namespace
                 if (primary) {
                     g_lastMagicActivationTime = std::chrono::steady_clock::now();
                     g_lastMagicActivationStone = def->localFormID;
+
+                    ConfigureRepresentativeMagicDamage(player, *def);
 
                     ChargeMagicTechniqueCost(
                         player,
@@ -700,6 +852,17 @@ namespace
         g_tier2AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kStonefleshLocalID, kSkyrimPlugin);
         g_tier3AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kIronfleshLocalID, kSkyrimPlugin);
 
+        g_galeCrescentDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kGaleCrescentDamageSpellLocalID, kRimSkillsPlugin);
+        g_dragonfireSigilDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kDragonfireSigilDamageSpellLocalID, kRimSkillsPlugin);
+        g_radiantTriplecutSpell1 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantTriplecutSpell1LocalID, kRimSkillsPlugin);
+        g_radiantTriplecutSpell2 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantTriplecutSpell2LocalID, kRimSkillsPlugin);
+        g_radiantTriplecutSpell3 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantTriplecutSpell3LocalID, kRimSkillsPlugin);
+
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
         g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
         g_magicCandidateSecondary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidateSecondaryLocalID, kCooldownPlugin);
@@ -712,6 +875,14 @@ namespace
             g_tier1AlterationProbe ? "Oakflesh" : "MISSING",
             g_tier2AlterationProbe ? "Stoneflesh" : "MISSING",
             g_tier3AlterationProbe ? "Ironflesh" : "MISSING");
+
+        SKSE::log::info(
+            "Magic damage proof spells: Gale={} Dragonfire={} Triplecut={}/{}/{}",
+            g_galeCrescentDamageSpell ? "OK" : "MISSING",
+            g_dragonfireSigilDamageSpell ? "OK" : "MISSING",
+            g_radiantTriplecutSpell1 ? "OK" : "MISSING",
+            g_radiantTriplecutSpell2 ? "OK" : "MISSING",
+            g_radiantTriplecutSpell3 ? "OK" : "MISSING");
         if (g_techniqueMarker) {
             SKSE::log::info("Technique marker resolved runtimeForm={:08X}", g_techniqueMarker->GetFormID());
         } else {
@@ -790,6 +961,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.9 Magic active-effect trace loaded");
+    SKSE::log::info("HE Technique Damage v0.3.0 Magic damage proof loaded");
     return true;
 }
