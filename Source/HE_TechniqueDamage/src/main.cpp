@@ -29,6 +29,7 @@ namespace
     constexpr RE::FormID kMoonlitSeveranceSpell1LocalID = 0x0BA0D;
     constexpr RE::FormID kMoonlitSeveranceSpell2LocalID = 0x0BA0E;
     constexpr RE::FormID kMoonshardSigilDamageSpellLocalID = 0x0BA70;
+    constexpr RE::FormID kMoonshardSigilExtraSpellLocalID = 0x0B44E;
 
     constexpr RE::FormID kElderMooncleaveDamageSpellLocalID = 0x0BA011;
     constexpr RE::FormID kCrimsonSeveranceSpell1LocalID = 0x000B35;
@@ -62,6 +63,7 @@ namespace
     RE::SpellItem* g_moonlitSeveranceSpell1 = nullptr;
     RE::SpellItem* g_moonlitSeveranceSpell2 = nullptr;
     RE::SpellItem* g_moonshardSigilDamageSpell = nullptr;
+    RE::SpellItem* g_moonshardSigilExtraSpell = nullptr;
 
     RE::SpellItem* g_elderMooncleaveDamageSpell = nullptr;
     RE::SpellItem* g_crimsonSeveranceSpell1 = nullptr;
@@ -453,13 +455,27 @@ namespace
             break;
         }
 
-        case 0x87D:  // Moonshard Sigil: one unique Needle Piercer magic hit.
-            configured = SetSpellEffectMagnitude(
+        case 0x87D: {  // Moonshard Sigil: trigger beam + nine spawned damage beams.
+            constexpr float kMoonshardExtraBeams = 9.0f;
+
+            // The first beam is only the hit-confirm/sector trigger.
+            const bool trigger = SetSpellEffectMagnitude(
                 g_moonshardSigilDamageSpell,
                 0,
-                scaledBudget,
-                "Moonshard Sigil / Needle Piercer");
+                0.0f,
+                "Moonshard Sigil / trigger beam");
+
+            // The spawned secondary beams own the entire Expert magic budget.
+            const float perBeam = scaledBudget / kMoonshardExtraBeams;
+            const bool extras = SetSpellEffectMagnitude(
+                g_moonshardSigilExtraSpell,
+                0,
+                perBeam,
+                "Moonshard Sigil / spawned beam");
+
+            configured = trigger && extras;
             break;
+        }
 
         case 0x893:  // Elder Mooncleave: one Master magic beam.
             configured = SetSpellEffectMagnitude(
@@ -481,10 +497,13 @@ namespace
             break;
         }
 
-        case 0x832: {  // Radiant Blade Dance: preserve native 45/45/45/45/45/120 weighting.
-            constexpr float kNativeTotal = 345.0f;
-            const float normalBlade = scaledBudget * (45.0f / kNativeTotal);
-            const float finalBlade = scaledBudget * (120.0f / kNativeTotal);
+        case 0x832: {
+            // Actual animation event counts:
+            // 30 x1, 60 x3, 80 x3, 120 x3, 150 x1, final x1.
+            // Native weighting is therefore (11 * 45) + 120 = 615.
+            constexpr float kNativeWeightedTotal = 615.0f;
+            const float normalBlade = scaledBudget * (45.0f / kNativeWeightedTotal);
+            const float finalBlade = scaledBudget * (120.0f / kNativeWeightedTotal);
 
             const bool a = SetSpellEffectMagnitude(
                 g_radiantBladeDanceSpell30, 0, normalBlade, "Radiant Blade Dance / blade 30");
@@ -1017,6 +1036,8 @@ namespace
             kMoonlitSeveranceSpell2LocalID, kRimSkillsPlugin);
         g_moonshardSigilDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
             kMoonshardSigilDamageSpellLocalID, kRimSkillsPlugin);
+        g_moonshardSigilExtraSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kMoonshardSigilExtraSpellLocalID, kRimSkillsPlugin);
 
         g_elderMooncleaveDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
             kElderMooncleaveDamageSpellLocalID, kEldenSkyrimPlugin);
@@ -1061,11 +1082,12 @@ namespace
             g_radiantTriplecutSpell3 ? "OK" : "MISSING");
 
         SKSE::log::info(
-            "Direct Magic batch spells: MoonlitCleave={} MoonlitSeverance={}/{} Moonshard={}",
+            "Direct Magic batch spells: MoonlitCleave={} MoonlitSeverance={}/{} Moonshard={}/{}",
             g_moonlitCleaveDamageSpell ? "OK" : "MISSING",
             g_moonlitSeveranceSpell1 ? "OK" : "MISSING",
             g_moonlitSeveranceSpell2 ? "OK" : "MISSING",
-            g_moonshardSigilDamageSpell ? "OK" : "MISSING");
+            g_moonshardSigilDamageSpell ? "OK" : "MISSING",
+            g_moonshardSigilExtraSpell ? "OK" : "MISSING");
 
         SKSE::log::info(
             "Direct Magic batch 2: Elder={} Crimson={}/{}/{} RadiantDance={}/{}/{}/{}/{}/{}",
@@ -1079,6 +1101,13 @@ namespace
             g_radiantBladeDanceSpell120 ? "OK" : "MISSING",
             g_radiantBladeDanceSpell150 ? "OK" : "MISSING",
             g_radiantBladeDanceFinal ? "OK" : "MISSING");
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            for (const auto& def : kMagicTechniqueDefinitions) {
+                ConfigureRepresentativeMagicDamage(player, def);
+            }
+            SKSE::log::info("Pre-normalized mapped Magic payload spells using current Alteration");
+        }
+
         if (g_techniqueMarker) {
             SKSE::log::info("Technique marker resolved runtimeForm={:08X}", g_techniqueMarker->GetFormID());
         } else {
@@ -1157,6 +1186,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.5 direct Magic batch 2 plus Moonshard trace loaded");
+    SKSE::log::info("HE Technique Damage v0.3.6 Moonshard and Radiant event-count correction loaded");
     return true;
 }
