@@ -48,9 +48,9 @@ namespace
     constexpr RE::FormID kRadiantFinisherExtraDamageEffectLocalID = 0x000AFA;
     constexpr float kRadiantFinisherDamageScale = 0.15f;
 
-    // Tempest Crescent: five light-line projectiles share one Tier 2 damage budget.
+    // Tempest Crescent: seven light-line projectiles share one Tier 2 damage budget.
     constexpr RE::FormID kTempestCrescentDamageEffectLocalID = 0x000E5B;
-    constexpr float kTempestCrescentLines = 5.0f;
+    constexpr float kTempestCrescentLines = 7.0f;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -780,7 +780,7 @@ namespace
             break;
         }
 
-        case 0x86D: {  // Tempest Crescent: five light lines share one Expert budget.
+        case 0x86D: {  // Tempest Crescent: seven light lines share one Expert budget.
             configured = ConfigureTempestCrescentDamage(scaledBudget);
             break;
         }
@@ -1501,6 +1501,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.4 Tempest Crescent five-line balance loaded");
+    SKSE::log::info("HE Technique Damage v0.4.5 Tempest Crescent seven-line balance loaded");
     return true;
 }
