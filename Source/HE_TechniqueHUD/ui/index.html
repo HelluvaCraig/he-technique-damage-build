@@ -1,0 +1,451 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    width:100%; height:100%; margin:0; overflow:hidden;
+    background:transparent; pointer-events:none;
+    font-family:Georgia, "Times New Roman", serif;
+  }
+
+  :root {
+    --size:72px;
+    --left:22px;
+    --bottom:112px;
+    --ready:#78d7e2;
+    --white:#f5f5f0;
+  }
+
+  #widget {
+    position:fixed;
+    left:var(--left);
+    bottom:var(--bottom);
+    width:var(--size);
+    height:var(--size);
+    opacity:.94;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.72));
+    z-index:10;
+  }
+
+  .sigilLayer {
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+  }
+
+  .sigilLayer svg {
+    width:100%;
+    height:100%;
+    overflow:visible;
+    display:block;
+  }
+
+  .lineHeavy,
+  .lineMedium,
+  .lineFine {
+    fill:none;
+    stroke:currentColor;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    vector-effect:non-scaling-stroke;
+  }
+  .lineHeavy  { stroke-width:1.8; }
+  .lineMedium { stroke-width:1.25; }
+  .lineFine   { stroke-width:.82; }
+
+  .solid {
+    fill:currentColor;
+    stroke:none;
+  }
+
+  #base {
+    color:rgba(246,246,242,.66);
+    transition:opacity .14s ease;
+  }
+
+  #charged {
+    color:var(--white);
+    clip-path:inset(100% 0 0 0);
+    opacity:.98;
+    filter:none;
+    transition:clip-path .065s linear, color .13s ease, opacity .14s ease, filter .18s ease;
+  }
+
+  #charged .tierMoons,
+  #charged .tierSword { display:none; }
+  #widget.tier2 #charged .tierMoons,
+  #widget.tier3 #charged .tierMoons { display:inline; }
+  #widget.tier3 #charged .tierSword { display:inline; }
+
+  #widget.unequipped #base { opacity:.34; }
+  #widget.unequipped #charged { opacity:0; filter:none; }
+
+  #widget.cooling #base { opacity:.28; }
+  #widget.cooling #charged {
+    color:var(--white);
+    opacity:.96;
+    filter:none;
+  }
+
+  #widget.blocked #base { opacity:.24; }
+  #widget.blocked #charged {
+    color:var(--white);
+    opacity:1;
+    filter:none;
+  }
+
+  #widget.ready #base { opacity:.16; }
+  #widget.ready #charged {
+    color:var(--ready);
+    opacity:1;
+    filter:drop-shadow(0 0 1.1px rgba(120,215,226,.95));
+  }
+
+  body.settings-open { pointer-events:auto; }
+
+  #settingsPanel {
+    display:none;
+    position:fixed;
+    right:4.5vw;
+    top:17vh;
+    width:min(390px, 36vw);
+    box-sizing:border-box;
+    padding:20px 22px 18px;
+    pointer-events:auto;
+    color:#eee9dc;
+    background:linear-gradient(180deg, rgba(24,25,25,.96), rgba(12,13,13,.94));
+    border:1px solid rgba(203,178,123,.52);
+    box-shadow:0 10px 36px rgba(0,0,0,.58), inset 0 0 0 1px rgba(255,255,255,.025);
+    z-index:100;
+  }
+
+  body.settings-open #settingsPanel { display:block; }
+
+  #settingsPanel::before,
+  #settingsPanel::after {
+    content:"";
+    position:absolute;
+    left:18px;
+    right:18px;
+    height:1px;
+    background:linear-gradient(90deg, transparent, rgba(203,178,123,.42), transparent);
+  }
+  #settingsPanel::before { top:47px; }
+  #settingsPanel::after { bottom:49px; }
+
+  .settingsTitle {
+    margin:0 0 22px;
+    text-align:center;
+    font-size:19px;
+    letter-spacing:.12em;
+    font-weight:normal;
+    color:#f2eee4;
+  }
+
+  .settingRow { margin:0 0 18px; }
+
+  .settingHeader {
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom:8px;
+  }
+
+  .settingLabel {
+    font-size:13px;
+    letter-spacing:.045em;
+    color:#e4dfd3;
+  }
+
+  .settingValue {
+    min-width:56px;
+    text-align:right;
+    font-size:12px;
+    color:#cdbb91;
+    font-variant-numeric:tabular-nums;
+  }
+
+  input[type="range"] {
+    width:100%;
+    margin:0;
+    accent-color:#b89b61;
+  }
+
+  .settingsHint {
+    margin:3px 0 17px;
+    font-size:11px;
+    line-height:1.45;
+    color:rgba(235,231,220,.58);
+  }
+
+  .buttons {
+    display:flex;
+    justify-content:flex-end;
+    gap:9px;
+    padding-top:14px;
+  }
+
+  button {
+    min-width:92px;
+    padding:7px 11px;
+    border:1px solid rgba(203,178,123,.44);
+    background:rgba(255,255,255,.035);
+    color:#ebe6d9;
+    font-family:inherit;
+    font-size:12px;
+    letter-spacing:.055em;
+    cursor:pointer;
+  }
+
+  button:hover,
+  button:focus {
+    outline:none;
+    background:rgba(203,178,123,.12);
+    border-color:rgba(220,196,143,.72);
+  }
+</style>
+</head>
+<body>
+<div id="widget" class="unequipped tier1">
+  <div id="base" class="sigilLayer"></div>
+  <div id="charged" class="sigilLayer"></div>
+</div>
+
+<div id="settingsPanel" aria-hidden="true">
+  <h1 class="settingsTitle">TECHNIQUE HUD</h1>
+
+  <div class="settingRow">
+    <div class="settingHeader">
+      <span class="settingLabel">Horizontal position</span>
+      <span id="leftValue" class="settingValue">22 px</span>
+    </div>
+    <input id="leftSlider" type="range" min="0" max="1920" step="1" value="22">
+  </div>
+
+  <div class="settingRow">
+    <div class="settingHeader">
+      <span class="settingLabel">Vertical position</span>
+      <span id="bottomValue" class="settingValue">112 px</span>
+    </div>
+    <input id="bottomSlider" type="range" min="0" max="1080" step="1" value="112">
+  </div>
+
+  <div class="settingRow">
+    <div class="settingHeader">
+      <span class="settingLabel">Size</span>
+      <span id="sizeValue" class="settingValue">72 px</span>
+    </div>
+    <input id="sizeSlider" type="range" min="40" max="200" step="1" value="72">
+  </div>
+
+  <p class="settingsHint">
+    Position changes are shown live. Horizontal is measured from the left edge;
+    vertical is measured upward from the bottom edge. Changes are saved automatically.
+  </p>
+
+  <div class="buttons">
+    <button id="resetButton" type="button">RESET</button>
+    <button id="closeButton" type="button">CLOSE</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const widget = document.getElementById('widget');
+  const base = document.getElementById('base');
+  const charged = document.getElementById('charged');
+  const panel = document.getElementById('settingsPanel');
+
+  const leftSlider = document.getElementById('leftSlider');
+  const bottomSlider = document.getElementById('bottomSlider');
+  const sizeSlider = document.getElementById('sizeSlider');
+  const leftValue = document.getElementById('leftValue');
+  const bottomValue = document.getElementById('bottomValue');
+  const sizeValue = document.getElementById('sizeValue');
+  const resetButton = document.getElementById('resetButton');
+  const closeButton = document.getElementById('closeButton');
+
+  const defaults = { left:22, bottom:112, size:72 };
+  let settingsOpen = false;
+
+  const art = `
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <g class="tierBorder">
+        <path class="lineHeavy" d="M50 4 L96 50 L50 96 L4 50 Z"/>
+        <path class="lineMedium" d="M50 10 L90 50 L50 90 L10 50 Z"/>
+        <path class="lineFine" d="M50 4 V0 M50 96 V100 M4 50 H0 M96 50 H100"/>
+        <path class="lineFine" d="M50 4 l-5 7 M50 4 l5 7 M50 96 l-5-7 M50 96 l5-7"/>
+        <path class="lineFine" d="M4 50 l7-5 M4 50 l7 5 M96 50 l-7-5 M96 50 l-7 5"/>
+        <path class="lineFine" d="M18 28 l5-1 l-1-5 M82 28 l-5-1 l1-5 M18 72 l5 1 l-1 5 M82 72 l-5 1 l1 5"/>
+        <path class="lineFine" d="M27 18 l4 4 M73 18 l-4 4 M27 82 l4-4 M73 82 l-4-4"/>
+        <circle class="solid" cx="50" cy="8.3" r="1.05"/>
+        <circle class="solid" cx="91.7" cy="50" r="1.05"/>
+        <circle class="solid" cx="50" cy="91.7" r="1.05"/>
+        <circle class="solid" cx="8.3" cy="50" r="1.05"/>
+      </g>
+
+      <g class="tierMoons">
+        <path class="solid" fill-rule="evenodd" d="M39 34 A17 17 0 1 0 39 66 A13 13 0 1 1 39 34 Z"/>
+        <path class="solid" fill-rule="evenodd" d="M61 34 A17 17 0 1 1 61 66 A13 13 0 1 0 61 34 Z"/>
+        <path class="lineFine" d="M23 50 H29 M71 50 H77"/>
+      </g>
+
+      <g class="tierSword">
+        <path class="solid" d="M48.7 18 L51.3 18 L52 65 L50 77 L48 65 Z"/>
+        <path class="solid" d="M50 12 L54 19 H46 Z"/>
+        <path class="solid" d="M39 35 H61 L58 38 H42 Z"/>
+        <path class="solid" d="M47.5 77 H52.5 L53 84 H47 Z"/>
+        <path class="solid" d="M46 84 H54 L50 90 Z"/>
+        <path class="lineFine" d="M44 31 L50 25 L56 31"/>
+      </g>
+    </svg>`;
+
+  base.innerHTML = art;
+  charged.innerHTML = art;
+
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, Number(v) || 0));
+  }
+
+  function setFill(value) {
+    const p = clamp(value, 0, 1);
+    charged.style.clipPath = `inset(${((1 - p) * 100).toFixed(2)}% 0 0 0)`;
+  }
+
+  function setMode(mode) {
+    widget.classList.remove('unequipped', 'blocked', 'cooling', 'ready');
+    widget.classList.add(mode);
+  }
+
+  function setTier(tier) {
+    const t = Math.max(1, Math.min(3, Number(tier) || 1));
+    widget.classList.remove('tier1', 'tier2', 'tier3');
+    widget.classList.add(`tier${t}`);
+  }
+
+  function updateSliderBounds() {
+    const size = clamp(sizeSlider.value, 40, 200);
+    leftSlider.max = String(Math.max(0, Math.floor(window.innerWidth - size)));
+    bottomSlider.max = String(Math.max(0, Math.floor(window.innerHeight - size)));
+  }
+
+  function setLayout(left, bottom, size) {
+    const safeSize = clamp(size, 40, 200);
+    const safeLeft = clamp(left, 0, 4000);
+    const safeBottom = clamp(bottom, 0, 4000);
+    document.documentElement.style.setProperty('--left', `${safeLeft}px`);
+    document.documentElement.style.setProperty('--bottom', `${safeBottom}px`);
+    document.documentElement.style.setProperty('--size', `${safeSize}px`);
+  }
+
+  function readSliderLayout() {
+    return {
+      left: Math.round(Number(leftSlider.value) || 0),
+      bottom: Math.round(Number(bottomSlider.value) || 0),
+      size: Math.round(Number(sizeSlider.value) || 72)
+    };
+  }
+
+  function refreshSettingLabels() {
+    const v = readSliderLayout();
+    leftValue.textContent = `${v.left} px`;
+    bottomValue.textContent = `${v.bottom} px`;
+    sizeValue.textContent = `${v.size} px`;
+  }
+
+  function applySlidersLive() {
+    updateSliderBounds();
+    const v = readSliderLayout();
+    setLayout(v.left, v.bottom, v.size);
+    refreshSettingLabels();
+  }
+
+  function persistSliders() {
+    const v = readSliderLayout();
+    try {
+      if (typeof window.HEHUDApply === 'function') window.HEHUDApply(`${v.left}|${v.bottom}|${v.size}`);
+    } catch (_) {}
+  }
+
+  function setSliderValues(left, bottom, size) {
+    sizeSlider.value = String(clamp(size, 40, 200));
+    updateSliderBounds();
+    leftSlider.value = String(clamp(left, 0, Number(leftSlider.max)));
+    bottomSlider.value = String(clamp(bottom, 0, Number(bottomSlider.max)));
+    applySlidersLive();
+  }
+
+  [leftSlider, bottomSlider, sizeSlider].forEach(slider => {
+    slider.addEventListener('input', applySlidersLive);
+    slider.addEventListener('change', () => {
+      applySlidersLive();
+      persistSliders();
+    });
+  });
+
+  resetButton.addEventListener('click', () => {
+    setSliderValues(defaults.left, defaults.bottom, defaults.size);
+    persistSliders();
+  });
+
+  closeButton.addEventListener('click', () => {
+    persistSliders();
+    try { if (typeof window.HEHUDClose === 'function') window.HEHUDClose(''); } catch (_) {}
+  });
+
+  window.addEventListener('resize', () => {
+    if (settingsOpen) applySlidersLive();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (!settingsOpen) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      persistSliders();
+      try { if (typeof window.HEHUDClose === 'function') window.HEHUDClose(''); } catch (_) {}
+    }
+  });
+
+  window.TechniqueHUD = {
+    setLayout,
+
+    openSettings(left, bottom, size) {
+      setSliderValues(left, bottom, size);
+      settingsOpen = true;
+      document.body.classList.add('settings-open');
+      panel.setAttribute('aria-hidden', 'false');
+    },
+
+    closeSettings() {
+      settingsOpen = false;
+      document.body.classList.remove('settings-open');
+      panel.setAttribute('aria-hidden', 'true');
+    },
+
+    setState(state) {
+      if (!state || !state.equipped) {
+        setTier(1);
+        setFill(0);
+        setMode('unequipped');
+        return;
+      }
+
+      setTier(state.tier);
+
+      if (state.cooling) {
+        setFill(state.progress);
+        setMode('cooling');
+        return;
+      }
+
+      setFill(1);
+      setMode(state.conditionsValid ? 'ready' : 'blocked');
+    }
+  };
+})();
+</script>
+</body>
+</html>
