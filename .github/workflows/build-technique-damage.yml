@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.3.3-dragonfire-budget-correction
+          name: HE_TechniqueDamage-v0.3.4-direct-magic-rollout
           path: artifact
