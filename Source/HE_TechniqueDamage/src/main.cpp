@@ -8,6 +8,7 @@ namespace
     constexpr auto kStonePlugin = "HE Elden Rim - Ash Rings.esp";
     constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
     constexpr auto kRimSkillsPlugin = "EldenSkyrim_RimSkills.esp";
+    constexpr auto kEldenSkyrimPlugin = "EldenSkyrim.esp";
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
@@ -28,6 +29,17 @@ namespace
     constexpr RE::FormID kMoonlitSeveranceSpell1LocalID = 0x0BA0D;
     constexpr RE::FormID kMoonlitSeveranceSpell2LocalID = 0x0BA0E;
     constexpr RE::FormID kMoonshardSigilDamageSpellLocalID = 0x0BA70;
+
+    constexpr RE::FormID kElderMooncleaveDamageSpellLocalID = 0x0BA011;
+    constexpr RE::FormID kCrimsonSeveranceSpell1LocalID = 0x000B35;
+    constexpr RE::FormID kCrimsonSeveranceSpell3LocalID = 0x000B3B;
+    constexpr RE::FormID kCrimsonSeveranceSpell4LocalID = 0x000B3C;
+    constexpr RE::FormID kRadiantBladeDanceSpell30LocalID = 0x0BA34;
+    constexpr RE::FormID kRadiantBladeDanceSpell60LocalID = 0x0BA35;
+    constexpr RE::FormID kRadiantBladeDanceSpell80LocalID = 0x0BA36;
+    constexpr RE::FormID kRadiantBladeDanceSpell120LocalID = 0x0BA37;
+    constexpr RE::FormID kRadiantBladeDanceSpell150LocalID = 0x0BA38;
+    constexpr RE::FormID kRadiantBladeDanceFinalLocalID = 0x0BA39;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -50,6 +62,17 @@ namespace
     RE::SpellItem* g_moonlitSeveranceSpell1 = nullptr;
     RE::SpellItem* g_moonlitSeveranceSpell2 = nullptr;
     RE::SpellItem* g_moonshardSigilDamageSpell = nullptr;
+
+    RE::SpellItem* g_elderMooncleaveDamageSpell = nullptr;
+    RE::SpellItem* g_crimsonSeveranceSpell1 = nullptr;
+    RE::SpellItem* g_crimsonSeveranceSpell3 = nullptr;
+    RE::SpellItem* g_crimsonSeveranceSpell4 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceSpell30 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceSpell60 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceSpell80 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceSpell120 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceSpell150 = nullptr;
+    RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -438,6 +461,47 @@ namespace
                 "Moonshard Sigil / Needle Piercer");
             break;
 
+        case 0x893:  // Elder Mooncleave: one Master magic beam.
+            configured = SetSpellEffectMagnitude(
+                g_elderMooncleaveDamageSpell,
+                0,
+                scaledBudget,
+                "Elder Mooncleave / Moonlight Beam");
+            break;
+
+        case 0x891: {  // Crimson Severance: three magic slashes share one Expert budget.
+            const float perSlice = scaledBudget / 3.0f;
+            const bool one = SetSpellEffectMagnitude(
+                g_crimsonSeveranceSpell1, 0, perSlice, "Crimson Severance / slice 1");
+            const bool three = SetSpellEffectMagnitude(
+                g_crimsonSeveranceSpell3, 0, perSlice, "Crimson Severance / slice 3");
+            const bool four = SetSpellEffectMagnitude(
+                g_crimsonSeveranceSpell4, 0, perSlice, "Crimson Severance / slice 4");
+            configured = one && three && four;
+            break;
+        }
+
+        case 0x832: {  // Radiant Blade Dance: preserve native 45/45/45/45/45/120 weighting.
+            constexpr float kNativeTotal = 345.0f;
+            const float normalBlade = scaledBudget * (45.0f / kNativeTotal);
+            const float finalBlade = scaledBudget * (120.0f / kNativeTotal);
+
+            const bool a = SetSpellEffectMagnitude(
+                g_radiantBladeDanceSpell30, 0, normalBlade, "Radiant Blade Dance / blade 30");
+            const bool b = SetSpellEffectMagnitude(
+                g_radiantBladeDanceSpell60, 0, normalBlade, "Radiant Blade Dance / blade 60");
+            const bool c = SetSpellEffectMagnitude(
+                g_radiantBladeDanceSpell80, 0, normalBlade, "Radiant Blade Dance / blade 80");
+            const bool d = SetSpellEffectMagnitude(
+                g_radiantBladeDanceSpell120, 0, normalBlade, "Radiant Blade Dance / blade 120");
+            const bool e = SetSpellEffectMagnitude(
+                g_radiantBladeDanceSpell150, 0, normalBlade, "Radiant Blade Dance / blade 150");
+            const bool f = SetSpellEffectMagnitude(
+                g_radiantBladeDanceFinal, 0, finalBlade, "Radiant Blade Dance / final blade");
+            configured = a && b && c && d && e && f;
+            break;
+        }
+
         default:
             return;
         }
@@ -583,6 +647,7 @@ namespace
         case 0x847:  // Dragonfire Sigil
         case 0x88F:  // Aurochs Charge
         case 0x89A:  // Ember Infusion
+        case 0x87D:  // Moonshard Sigil outlier trace
             return true;
         default:
             return false;
@@ -953,6 +1018,27 @@ namespace
         g_moonshardSigilDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
             kMoonshardSigilDamageSpellLocalID, kRimSkillsPlugin);
 
+        g_elderMooncleaveDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kElderMooncleaveDamageSpellLocalID, kEldenSkyrimPlugin);
+        g_crimsonSeveranceSpell1 = dataHandler->LookupForm<RE::SpellItem>(
+            kCrimsonSeveranceSpell1LocalID, kEldenSkyrimPlugin);
+        g_crimsonSeveranceSpell3 = dataHandler->LookupForm<RE::SpellItem>(
+            kCrimsonSeveranceSpell3LocalID, kEldenSkyrimPlugin);
+        g_crimsonSeveranceSpell4 = dataHandler->LookupForm<RE::SpellItem>(
+            kCrimsonSeveranceSpell4LocalID, kEldenSkyrimPlugin);
+        g_radiantBladeDanceSpell30 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceSpell30LocalID, kRimSkillsPlugin);
+        g_radiantBladeDanceSpell60 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceSpell60LocalID, kRimSkillsPlugin);
+        g_radiantBladeDanceSpell80 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceSpell80LocalID, kRimSkillsPlugin);
+        g_radiantBladeDanceSpell120 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceSpell120LocalID, kRimSkillsPlugin);
+        g_radiantBladeDanceSpell150 = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceSpell150LocalID, kRimSkillsPlugin);
+        g_radiantBladeDanceFinal = dataHandler->LookupForm<RE::SpellItem>(
+            kRadiantBladeDanceFinalLocalID, kRimSkillsPlugin);
+
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
         g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
         g_magicCandidateSecondary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidateSecondaryLocalID, kCooldownPlugin);
@@ -980,6 +1066,19 @@ namespace
             g_moonlitSeveranceSpell1 ? "OK" : "MISSING",
             g_moonlitSeveranceSpell2 ? "OK" : "MISSING",
             g_moonshardSigilDamageSpell ? "OK" : "MISSING");
+
+        SKSE::log::info(
+            "Direct Magic batch 2: Elder={} Crimson={}/{}/{} RadiantDance={}/{}/{}/{}/{}/{}",
+            g_elderMooncleaveDamageSpell ? "OK" : "MISSING",
+            g_crimsonSeveranceSpell1 ? "OK" : "MISSING",
+            g_crimsonSeveranceSpell3 ? "OK" : "MISSING",
+            g_crimsonSeveranceSpell4 ? "OK" : "MISSING",
+            g_radiantBladeDanceSpell30 ? "OK" : "MISSING",
+            g_radiantBladeDanceSpell60 ? "OK" : "MISSING",
+            g_radiantBladeDanceSpell80 ? "OK" : "MISSING",
+            g_radiantBladeDanceSpell120 ? "OK" : "MISSING",
+            g_radiantBladeDanceSpell150 ? "OK" : "MISSING",
+            g_radiantBladeDanceFinal ? "OK" : "MISSING");
         if (g_techniqueMarker) {
             SKSE::log::info("Technique marker resolved runtimeForm={:08X}", g_techniqueMarker->GetFormID());
         } else {
@@ -1058,6 +1157,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.4 direct Magic rollout batch loaded");
+    SKSE::log::info("HE Technique Damage v0.3.5 direct Magic batch 2 plus Moonshard trace loaded");
     return true;
 }
