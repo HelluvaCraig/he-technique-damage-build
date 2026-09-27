@@ -43,11 +43,8 @@ namespace
 
     struct HUDState
     {
-        bool equipped = false;
-        std::uint8_t tier = 0;
-        bool cooling = false;
-        bool conditionsValid = false;
-        float progress = 0.0f;
+        std::uint8_t equippedTier = 0;
+        std::array<float, 3> progress{ 1.0f, 1.0f, 1.0f };
     };
 
     HUDState g_lastState{};
@@ -381,13 +378,15 @@ namespace
         if (!g_hasLastState) {
             return true;
         }
-        if (a_state.equipped != g_lastState.equipped ||
-            a_state.tier != g_lastState.tier ||
-            a_state.cooling != g_lastState.cooling ||
-            a_state.conditionsValid != g_lastState.conditionsValid) {
+        if (a_state.equippedTier != g_lastState.equippedTier) {
             return true;
         }
-        return std::fabs(a_state.progress - g_lastState.progress) >= 0.0025f;
+        for (std::size_t i = 0; i < a_state.progress.size(); ++i) {
+            if (std::fabs(a_state.progress[i] - g_lastState.progress[i]) >= 0.0025f) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void PushState(const HUDState& a_state)
@@ -397,12 +396,11 @@ namespace
         }
 
         const auto script = std::format(
-            "window.TechniqueHUD&&window.TechniqueHUD.setState({{equipped:{},tier:{},cooling:{},conditionsValid:{},progress:{:.5f}}});",
-            a_state.equipped ? "true" : "false",
-            a_state.tier,
-            a_state.cooling ? "true" : "false",
-            a_state.conditionsValid ? "true" : "false",
-            a_state.progress);
+            "window.TechniqueHUD&&window.TechniqueHUD.setState({{equippedTier:{},p1:{:.5f},p2:{:.5f},p3:{:.5f}}});",
+            a_state.equippedTier,
+            a_state.progress[0],
+            a_state.progress[1],
+            a_state.progress[2]);
 
         g_prisma->Invoke(g_view, script.c_str());
         g_lastState = a_state;
@@ -423,14 +421,13 @@ namespace
         }
 
         HUDState state{};
-        state.equipped = g_cachedDefinition != nullptr;
-
         if (g_cachedDefinition) {
-            state.tier = GetTechniqueTier(*g_cachedDefinition);
-            state.conditionsValid = TechniqueConditionsMet(player, *g_cachedDefinition, state.tier);
-            const auto [cooling, progress] = GetCooldownState(player, state.tier);
-            state.cooling = cooling;
-            state.progress = cooling ? progress : 1.0f;
+            state.equippedTier = GetTechniqueTier(*g_cachedDefinition);
+        }
+
+        for (std::uint8_t tier = 1; tier <= 3; ++tier) {
+            const auto [cooling, progress] = GetCooldownState(player, tier);
+            state.progress[tier - 1] = cooling ? progress : 1.0f;
         }
 
         PushState(state);
@@ -650,6 +647,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique HUD v5.6.11 layered sigil loaded");
+    SKSE::log::info("HE Technique HUD v5.6.14 independent tier meters loaded");
     return true;
 }
