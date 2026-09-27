@@ -27,8 +27,6 @@ namespace
     bool g_spellCastSinkRegistered = false;
     bool g_magicEffectSinkRegistered = false;
     bool g_activeEffectSinkRegistered = false;
-    bool g_magicMarkerWatcherStarted = false;
-    bool g_magicMarkerWasActive = false;
 
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
     {
@@ -416,68 +414,6 @@ namespace
         }
     }
 
-    void MagicMarkerPollTask()
-    {
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        const bool markerActive = player && TechniqueMarkerActive(player);
-
-        if (markerActive != g_magicMarkerWasActive) {
-            SKSE::log::info(
-                "[MAGIC MARKER EDGE] active={}",
-                markerActive ? 1 : 0);
-
-            if (markerActive && player) {
-                if (const auto* def = GetEquippedMagicStone(player)) {
-                    SKSE::log::info(
-                        "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X} source=poll-rise",
-                        def->name,
-                        def->localFormID,
-                        g_techniqueMarker ? g_techniqueMarker->GetFormID() : 0);
-
-                    LogMagicCostProof(
-                        player,
-                        *def,
-                        g_techniqueMarker ? g_techniqueMarker->GetFormID() : 0,
-                        "Technique marker rising edge");
-                } else {
-                    SKSE::log::info(
-                        "[MAGIC MARKER EDGE] rising edge had no equipped Magic/Rune Technique Stone");
-                }
-            }
-
-            g_magicMarkerWasActive = markerActive;
-        }
-
-        if (g_magicMarkerWatcherStarted) {
-            if (const auto* task = SKSE::GetTaskInterface()) {
-                task->AddTask(MagicMarkerPollTask);
-            }
-        }
-    }
-
-    void StartMagicMarkerWatcher()
-    {
-        if (g_magicMarkerWatcherStarted) {
-            return;
-        }
-
-        const auto* task = SKSE::GetTaskInterface();
-        if (!task) {
-            SKSE::log::error("SKSE TaskInterface unavailable - Magic marker watcher disabled");
-            return;
-        }
-
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        g_magicMarkerWasActive = player && TechniqueMarkerActive(player);
-        g_magicMarkerWatcherStarted = true;
-
-        SKSE::log::info(
-            "Magic Technique marker watcher started initialActive={}",
-            g_magicMarkerWasActive ? 1 : 0);
-
-        task->AddTask(MagicMarkerPollTask);
-    }
-
     void ResolveForms()
     {
         auto* dataHandler = RE::TESDataHandler::GetSingleton();
@@ -580,7 +516,6 @@ namespace
         case SKSE::MessagingInterface::kDataLoaded:
             ResolveForms();
             RegisterMagicDiagnosticSinks();
-            StartMagicMarkerWatcher();
             RegisterPrecision();
             break;
         default:
@@ -608,6 +543,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.4 Magic marker polling proof loaded");
+    SKSE::log::info("HE Technique Damage v0.2.5 Safe rollback loaded");
     return true;
 }
