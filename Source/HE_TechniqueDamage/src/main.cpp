@@ -291,18 +291,24 @@ namespace
             a_def,
             naturalProbeCost);
 
-        const float before = std::max(0.0f, a_actor->GetActorValue(RE::ActorValue::kMagicka));
+        auto* avOwner = a_actor->AsActorValueOwner();
+        if (!avOwner) {
+            SKSE::log::error("[MAGIC CHARGE] ActorValueOwner unavailable for {}", a_def.name);
+            return;
+        }
+
+        const float before = std::max(0.0f, avOwner->GetActorValue(RE::ActorValue::kMagicka));
         const bool sufficient = before + 0.01f >= adjustedCost;
         const float charged = std::clamp(adjustedCost, 0.0f, before);
 
         if (charged > 0.0f) {
-            a_actor->RestoreActorValue(
+            avOwner->RestoreActorValue(
                 RE::ACTOR_VALUE_MODIFIER::kDamage,
                 RE::ActorValue::kMagicka,
                 -charged);
         }
 
-        const float after = std::max(0.0f, a_actor->GetActorValue(RE::ActorValue::kMagicka));
+        const float after = std::max(0.0f, avOwner->GetActorValue(RE::ActorValue::kMagicka));
 
         SKSE::log::info(
             "[MAGIC CHARGE] Technique={} stone={:03X} tier={} baseMagicka={:.1f} "
