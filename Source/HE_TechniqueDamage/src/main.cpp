@@ -220,13 +220,11 @@ namespace
         const float actualAttackMult = a_hit.attackData ? a_hit.attackData->data.damageMult : -1.0f;
         const bool actualLeftAttack = a_hit.attackData ? a_hit.attackData->IsLeftAttack() : false;
         const RE::FormID weaponFormID = a_hit.weapon ? a_hit.weapon->GetFormID() : 0;
-        const RE::FormID projectileFormID = a_precisionHit.projectile ? a_precisionHit.projectile->GetFormID() : 0;
-
         const auto* def = GetEquippedPhysicalStone(attacker);
         if (ShouldTrace(def)) {
             SKSE::log::info(
-                "[TRACE POST] {} form={:X} weapon={:08X} projectile={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
-                def->name, def->localFormID, weaponFormID, projectileFormID, actualLeftAttack,
+                "[TRACE POST] {} form={:X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+                def->name, def->localFormID, weaponFormID, actualLeftAttack,
                 actualAttackMult, a_hit.totalDamage, a_hit.physicalDamage, a_hit.resistedPhysicalDamage);
             return;
         }
@@ -234,9 +232,8 @@ namespace
         const auto* magicDef = GetEquippedMagicStone(attacker);
         if (magicDef && magicDef->localFormID == 0x832) {
             SKSE::log::info(
-                "[RADIANT PHYSICAL TRACE] weapon={:08X} projectile={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+                "[RADIANT PHYSICAL TRACE] weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
                 weaponFormID,
-                projectileFormID,
                 actualLeftAttack,
                 actualAttackMult,
                 a_hit.totalDamage,
