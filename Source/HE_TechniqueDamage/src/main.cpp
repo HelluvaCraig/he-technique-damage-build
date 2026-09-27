@@ -779,12 +779,22 @@ namespace
                 if (mgef) {
                     const char* editorID = mgef->GetFormEditorID();
                     const char* effectName = mgef->GetName();
+                    auto* projectileExplosion =
+                        (mgef->data.projectileBase && mgef->data.projectileBase->data.explosionType) ?
+                            mgef->data.projectileBase->data.explosionType : nullptr;
+                    auto* directExplosion = mgef->data.explosion;
+                    const float projectileExplosionDamage =
+                        projectileExplosion ? projectileExplosion->data.damage : -1.0f;
+                    const float directExplosionDamage =
+                        directExplosion ? directExplosion->data.damage : -1.0f;
 
                     SKSE::log::info(
                         "[MAGIC MGEF TRACE] Technique={} stone={:03X} target={:08X} "
                         "effectPlugin={} effectLocal={:06X} effectRuntime={:08X} "
                         "editor={} name={} archetype={} primaryAV={} resistAV={} "
-                        "detrimental={} hostile={} baseCost={:.3f} area={} projectile={:08X} projectileExplosion={:08X} explosion={:08X}",
+                        "detrimental={} hostile={} baseCost={:.3f} area={} projectile={:08X} "
+                        "projectileExplosion={:08X} projectileExplosionDamage={:.3f} "
+                        "explosion={:08X} explosionDamage={:.3f}",
                         def->name,
                         def->localFormID,
                         target->GetFormID(),
@@ -801,9 +811,10 @@ namespace
                         mgef->data.baseCost,
                         mgef->data.spellmakingArea,
                         mgef->data.projectileBase ? mgef->data.projectileBase->GetFormID() : 0,
-                        (mgef->data.projectileBase && mgef->data.projectileBase->data.explosionType) ?
-                            mgef->data.projectileBase->data.explosionType->GetFormID() : 0,
-                        mgef->data.explosion ? mgef->data.explosion->GetFormID() : 0);
+                        projectileExplosion ? projectileExplosion->GetFormID() : 0,
+                        projectileExplosionDamage,
+                        directExplosion ? directExplosion->GetFormID() : 0,
+                        directExplosionDamage);
                 } else {
                     SKSE::log::info(
                         "[MAGIC MGEF TRACE] Technique={} stone={:03X} effect={:08X} target={:08X} effectLookup=NOT_FOUND",
@@ -1196,6 +1207,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.8 Radiant end-burst diagnostic loaded");
+    SKSE::log::info("HE Technique Damage v0.3.9 Radiant explosion damage diagnostic loaded");
     return true;
 }
