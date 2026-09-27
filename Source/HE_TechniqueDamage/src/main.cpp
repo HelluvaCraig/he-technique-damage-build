@@ -26,6 +26,7 @@ namespace
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
     bool g_magicEffectSinkRegistered = false;
+    bool g_activeEffectSinkRegistered = false;
 
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
     {
@@ -310,27 +311,42 @@ namespace
         }
     };
 
-    class MagicEffectApplySink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
+    RE::ActiveEffect* FindActiveEffectByUniqueID(RE::Actor* a_actor, std::uint16_t a_uniqueID)
+    {
+        if (!a_actor) {
+            return nullptr;
+        }
+
+        auto* magicTarget = a_actor->AsMagicTarget();
+        auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
+        if (!effects) {
+            return nullptr;
+        }
+
+        for (auto* effect : *effects) {
+            if (!effect) {
+                continue;
+            }
+            if (effect->usUniqueID == a_uniqueID) {
+                return effect;
+            }
+        }
+        return nullptr;
+    }
+
+    class MagicActiveEffectSink final : public RE::BSTEventSink<RE::TESActiveEffectApplyRemoveEvent>
     {
     public:
         RE::BSEventNotifyControl ProcessEvent(
-            const RE::TESMagicEffectApplyEvent* a_event,
-            RE::BSTEventSource<RE::TESMagicEffectApplyEvent>*) override
+            const RE::TESActiveEffectApplyRemoveEvent* a_event,
+            RE::BSTEventSource<RE::TESActiveEffectApplyRemoveEvent>*) override
         {
-            if (!a_event || !a_event->caster || !a_event->target || a_event->magicEffect == 0 || !g_techniqueMarker) {
+            if (!a_event || !a_event->isApplied || !a_event->target || !g_techniqueMarker) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            auto* caster = a_event->caster.get();
             auto* target = a_event->target.get();
-            if (!caster || !caster->IsPlayerRef() || !target || !target->IsPlayerRef()) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
-            // The cooldown/Technique marker is already the shared, reliable signal
-            // used by the physical damage layer. Treat its application to the
-            // player as the once-per-activation Magic Technique trigger.
-            if (a_event->magicEffect != g_techniqueMarker->GetFormID()) {
+            if (!target || !target->IsPlayerRef()) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -344,17 +360,32 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
+            auto* activeEffect = FindActiveEffectByUniqueID(player, a_event->activeEffectUniqueID);
+            if (!activeEffect) {
+                SKSE::log::info(
+                    "[MAGIC ACTIVE EFFECT] Technique={} uniqueID={} applied=1 activeEffect=NOT_FOUND",
+                    def->name,
+                    a_event->activeEffectUniqueID);
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* baseEffect = activeEffect->GetBaseObject();
+            if (baseEffect != g_techniqueMarker) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
             SKSE::log::info(
-                "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X}",
+                "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X} uniqueID={}",
                 def->name,
                 def->localFormID,
-                a_event->magicEffect);
+                baseEffect->GetFormID(),
+                a_event->activeEffectUniqueID);
 
             LogMagicCostProof(
                 player,
                 *def,
-                a_event->magicEffect,
-                "Technique marker activation");
+                baseEffect->GetFormID(),
+                "Technique marker active-effect apply");
 
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -375,11 +406,11 @@ namespace
             SKSE::log::info("Magic Technique spell-cast diagnostic sink registered");
         }
 
-        if (!g_magicEffectSinkRegistered) {
-            static MagicEffectApplySink effectSink;
-            source->AddEventSink<RE::TESMagicEffectApplyEvent>(&effectSink);
-            g_magicEffectSinkRegistered = true;
-            SKSE::log::info("Magic Technique magic-effect diagnostic sink registered");
+        if (!g_activeEffectSinkRegistered) {
+            static MagicActiveEffectSink activeEffectSink;
+            source->AddEventSink<RE::TESActiveEffectApplyRemoveEvent>(&activeEffectSink);
+            g_activeEffectSinkRegistered = true;
+            SKSE::log::info("Magic Technique active-effect diagnostic sink registered");
         }
     }
 
@@ -512,6 +543,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.2 Magic marker activation proof loaded");
+    SKSE::log::info("HE Technique Damage v0.2.3 Magic active-effect proof loaded");
     return true;
 }

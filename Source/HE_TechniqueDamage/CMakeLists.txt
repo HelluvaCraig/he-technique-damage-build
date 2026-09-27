@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(HE_TechniqueDamage VERSION 0.2.2 LANGUAGES CXX)
+project(HE_TechniqueDamage VERSION 0.2.3 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 
