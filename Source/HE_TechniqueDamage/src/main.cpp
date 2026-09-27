@@ -861,6 +861,7 @@ namespace
         case 0x89A:  // Ember Infusion
         case 0x87D:  // Moonshard Sigil outlier trace
         case 0x832:  // Radiant Blade Dance end-burst trace
+        case 0x86D:  // Tempest Crescent mapping trace
             return true;
         default:
             return false;
@@ -1401,6 +1402,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.2 Radiant finisher 15-percent balance loaded");
+    SKSE::log::info("HE Technique Damage v0.4.3 Tempest Crescent mapping diagnostic loaded");
     return true;
 }
