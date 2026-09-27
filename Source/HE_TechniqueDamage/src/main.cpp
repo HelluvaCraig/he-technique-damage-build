@@ -950,20 +950,10 @@ namespace
 
     bool IsRepresentativeMagicTraceStone(RE::FormID a_localFormID)
     {
-        switch (a_localFormID) {
-        case 0x87A:  // Gale Crescent
-        case 0x8A0:  // Radiant Triplecut
-        case 0x87B:  // Moonlit Severance
-        case 0x847:  // Dragonfire Sigil
-        case 0x88F:  // Aurochs Charge
-        case 0x89A:  // Ember Infusion
-        case 0x87D:  // Moonshard Sigil outlier trace
-        case 0x832:  // Radiant Blade Dance end-burst trace
-        case 0x86D:  // Tempest Crescent mapping trace
-            return true;
-        default:
-            return false;
-        }
+        // v0.4.6 batch audit: trace every equipped Magic/Rune Technique so the
+        // remaining payload mappings can be captured in one play session.
+        (void)a_localFormID;
+        return true;
     }
 
     RE::FormID GetLocalFormID(const RE::TESForm* a_form)
@@ -998,7 +988,7 @@ namespace
 
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - g_lastMagicActivationTime).count();
-        return elapsed >= 0 && elapsed <= 5000;
+        return elapsed >= 0 && elapsed <= 8000;
     }
 
     class MagicCandidateEffectSink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
@@ -1501,6 +1491,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.5 Tempest Crescent seven-line balance loaded");
+    SKSE::log::info("HE Technique Damage v0.4.6 remaining-magic batch audit loaded");
     return true;
 }
