@@ -8,3 +8,5 @@ The plugin uses Precision's official pre-hit API. Physical Technique Stones rece
 - T3: 10x weapon damage
 
 The budget is divided by the Technique's expected damaging contacts. Precision keeps the actual attacking hand/weapon for weapon collisions; ambiguous/body contacts use the normal right-hand fallback path.
+
+Build trigger branch for CI validation.

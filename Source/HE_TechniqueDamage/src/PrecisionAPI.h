@@ -4,6 +4,7 @@
 #include <SKSE/SKSE.h>
 #include <functional>
 #include <vector>
+#include <Windows.h>
 
 namespace PRECISION_API
 {
@@ -73,11 +74,11 @@ namespace PRECISION_API
 
     [[nodiscard]] inline IVPrecision1* RequestPluginAPI()
     {
-        auto module = REX::W32::GetModuleHandle("Precision.dll");
+        auto module = ::GetModuleHandleA("Precision.dll");
         if (!module) {
             return nullptr;
         }
-        auto proc = reinterpret_cast<_RequestPluginAPI>(REX::W32::GetProcAddress(module, "RequestPluginAPI"));
+        auto proc = reinterpret_cast<_RequestPluginAPI>(::GetProcAddress(module, "RequestPluginAPI"));
         return proc ? static_cast<IVPrecision1*>(proc(InterfaceVersion::V1)) : nullptr;
     }
 }
