@@ -298,21 +298,14 @@ namespace
             }
 
             const auto signalIt = g_magicActivationBySpell.find(a_event->spell);
-            const bool knownSignal = signalIt != g_magicActivationBySpell.end();
-            const char* label = knownSignal ? signalIt->second : "unmapped player spell event";
-
-            SKSE::log::info(
-                "[MAGIC EVENT SPELL] Technique={} stone={:03X} spell={:08X} knownSignal={}",
-                def->name,
-                def->localFormID,
-                a_event->spell,
-                knownSignal);
-
-            // Diagnostic v0.2.1 deliberately calculates the proof for ANY player
-            // spell event while a Magic/Rune Stone is equipped. This lets us
-            // discover the real activation event instead of requiring our old
-            // guessed signal map to match first.
-            LogMagicCostProof(player, *def, a_event->spell, label);
+            if (signalIt != g_magicActivationBySpell.end()) {
+                SKSE::log::info(
+                    "[MAGIC SIGNAL SPELL] Technique={} stone={:03X} spell={:08X} label={}",
+                    def->name,
+                    def->localFormID,
+                    a_event->spell,
+                    signalIt->second);
+            }
             return RE::BSEventNotifyControl::kContinue;
         }
     };
@@ -324,12 +317,20 @@ namespace
             const RE::TESMagicEffectApplyEvent* a_event,
             RE::BSTEventSource<RE::TESMagicEffectApplyEvent>*) override
         {
-            if (!a_event || !a_event->caster || a_event->magicEffect == 0) {
+            if (!a_event || !a_event->caster || !a_event->target || a_event->magicEffect == 0 || !g_techniqueMarker) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
             auto* caster = a_event->caster.get();
-            if (!caster || !caster->IsPlayerRef()) {
+            auto* target = a_event->target.get();
+            if (!caster || !caster->IsPlayerRef() || !target || !target->IsPlayerRef()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            // The cooldown/Technique marker is already the shared, reliable signal
+            // used by the physical damage layer. Treat its application to the
+            // player as the once-per-activation Magic Technique trigger.
+            if (a_event->magicEffect != g_techniqueMarker->GetFormID()) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -343,31 +344,17 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            const RE::FormID targetFormID = a_event->target ? a_event->target->GetFormID() : 0;
-
             SKSE::log::info(
-                "[MAGIC EVENT MGEF] Technique={} stone={:03X} effect={:08X} target={:08X}",
+                "[MAGIC ACTIVATION] Technique={} stone={:03X} marker={:08X}",
                 def->name,
                 def->localFormID,
-                a_event->magicEffect,
-                targetFormID);
+                a_event->magicEffect);
 
-            // Effect application can fire multiple times for one Technique. For
-            // v0.2.1 that is intentional: we want the exact runtime effect IDs.
-            float naturalProbeCost = -1.0f;
-            const float adjustedCost = CalculateAlterationAdjustedTechniqueCost(
+            LogMagicCostProof(
                 player,
                 *def,
-                naturalProbeCost);
-
-            SKSE::log::info(
-                "[MAGIC EFFECT COST] Technique={} tier={} baseMagicka={:.1f} probe={} naturalProbeCost={:.2f} adjustedTechniqueCost={:.2f}",
-                def->name,
-                def->tier,
-                def->baseMagicka,
-                GetAlterationProbeName(def->tier),
-                naturalProbeCost,
-                adjustedCost);
+                a_event->magicEffect,
+                "Technique marker activation");
 
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -451,7 +438,11 @@ namespace
             g_tier1AlterationProbe ? "Oakflesh" : "MISSING",
             g_tier2AlterationProbe ? "Stoneflesh" : "MISSING",
             g_tier3AlterationProbe ? "Ironflesh" : "MISSING");
-        SKSE::log::info("Technique marker {}", g_techniqueMarker ? "resolved" : "NOT resolved");
+        if (g_techniqueMarker) {
+            SKSE::log::info("Technique marker resolved runtimeForm={:08X}", g_techniqueMarker->GetFormID());
+        } else {
+            SKSE::log::info("Technique marker NOT resolved");
+        }
     }
 
     void RegisterPrecision()
@@ -521,6 +512,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.1 Magic event diagnostic loaded");
+    SKSE::log::info("HE Technique Damage v0.2.2 Magic marker activation proof loaded");
     return true;
 }
