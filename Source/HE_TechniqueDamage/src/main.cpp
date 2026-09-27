@@ -25,6 +25,7 @@ namespace
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
+    bool g_magicEffectSinkRegistered = false;
 
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
     {
@@ -286,8 +287,49 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const auto* def = GetEquippedMagicStone(player);
+            if (!def) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
             const auto signalIt = g_magicActivationBySpell.find(a_event->spell);
-            if (signalIt == g_magicActivationBySpell.end()) {
+            const bool knownSignal = signalIt != g_magicActivationBySpell.end();
+            const char* label = knownSignal ? signalIt->second : "unmapped player spell event";
+
+            SKSE::log::info(
+                "[MAGIC EVENT SPELL] Technique={} stone={:03X} spell={:08X} knownSignal={}",
+                def->name,
+                def->localFormID,
+                a_event->spell,
+                knownSignal);
+
+            // Diagnostic v0.2.1 deliberately calculates the proof for ANY player
+            // spell event while a Magic/Rune Stone is equipped. This lets us
+            // discover the real activation event instead of requiring our old
+            // guessed signal map to match first.
+            LogMagicCostProof(player, *def, a_event->spell, label);
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    class MagicEffectApplySink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::TESMagicEffectApplyEvent* a_event,
+            RE::BSTEventSource<RE::TESMagicEffectApplyEvent>*) override
+        {
+            if (!a_event || !a_event->caster || a_event->magicEffect == 0) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* caster = a_event->caster.get();
+            if (!caster || !caster->IsPlayerRef()) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -301,27 +343,57 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            LogMagicCostProof(player, *def, a_event->spell, signalIt->second);
+            const RE::FormID targetFormID = a_event->target ? a_event->target->GetFormID() : 0;
+
+            SKSE::log::info(
+                "[MAGIC EVENT MGEF] Technique={} stone={:03X} effect={:08X} target={:08X}",
+                def->name,
+                def->localFormID,
+                a_event->magicEffect,
+                targetFormID);
+
+            // Effect application can fire multiple times for one Technique. For
+            // v0.2.1 that is intentional: we want the exact runtime effect IDs.
+            float naturalProbeCost = -1.0f;
+            const float adjustedCost = CalculateAlterationAdjustedTechniqueCost(
+                player,
+                *def,
+                naturalProbeCost);
+
+            SKSE::log::info(
+                "[MAGIC EFFECT COST] Technique={} tier={} baseMagicka={:.1f} probe={} naturalProbeCost={:.2f} adjustedTechniqueCost={:.2f}",
+                def->name,
+                def->tier,
+                def->baseMagicka,
+                GetAlterationProbeName(def->tier),
+                naturalProbeCost,
+                adjustedCost);
+
             return RE::BSEventNotifyControl::kContinue;
         }
     };
 
-    void RegisterMagicSpellCastSink()
+    void RegisterMagicDiagnosticSinks()
     {
-        if (g_spellCastSinkRegistered) {
-            return;
-        }
-
         auto* source = RE::ScriptEventSourceHolder::GetSingleton();
         if (!source) {
-            SKSE::log::error("ScriptEventSourceHolder unavailable - Magic cost proof disabled");
+            SKSE::log::error("ScriptEventSourceHolder unavailable - Magic event diagnostics disabled");
             return;
         }
 
-        static MagicSpellCastSink sink;
-        source->AddEventSink<RE::TESSpellCastEvent>(&sink);
-        g_spellCastSinkRegistered = true;
-        SKSE::log::info("Magic Technique spell-cast proof sink registered");
+        if (!g_spellCastSinkRegistered) {
+            static MagicSpellCastSink spellSink;
+            source->AddEventSink<RE::TESSpellCastEvent>(&spellSink);
+            g_spellCastSinkRegistered = true;
+            SKSE::log::info("Magic Technique spell-cast diagnostic sink registered");
+        }
+
+        if (!g_magicEffectSinkRegistered) {
+            static MagicEffectApplySink effectSink;
+            source->AddEventSink<RE::TESMagicEffectApplyEvent>(&effectSink);
+            g_magicEffectSinkRegistered = true;
+            SKSE::log::info("Magic Technique magic-effect diagnostic sink registered");
+        }
     }
 
     void ResolveForms()
@@ -421,7 +493,7 @@ namespace
             break;
         case SKSE::MessagingInterface::kDataLoaded:
             ResolveForms();
-            RegisterMagicSpellCastSink();
+            RegisterMagicDiagnosticSinks();
             RegisterPrecision();
             break;
         default:
@@ -449,6 +521,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.0 Magic cost proof loaded");
+    SKSE::log::info("HE Technique Damage v0.2.1 Magic event diagnostic loaded");
     return true;
 }
