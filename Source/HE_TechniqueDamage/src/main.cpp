@@ -12,6 +12,7 @@ namespace
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
+    constexpr bool kBatchAuditDisableCooldowns = true;
 
     constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
@@ -1156,12 +1157,41 @@ namespace
 
             if (targetRef->IsPlayerRef()) {
                 auto* activeEffect = FindActiveEffectByUniqueID(player, a_event->activeEffectUniqueID);
-                if (!activeEffect || !g_techniqueMarker) {
+                if (!activeEffect) {
                     return RE::BSEventNotifyControl::kContinue;
                 }
 
                 auto* baseEffect = activeEffect->GetBaseObject();
-                if (baseEffect != g_techniqueMarker) {
+                if (!baseEffect) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                // Test-only batch-audit bypass. Cooldown effects live in the
+                // Ash Cooldown plugin, while these three effects are essential
+                // plumbing and must remain active long enough to route/trace.
+                if (kBatchAuditDisableCooldowns) {
+                    const auto sourcePlugin = GetSourcePlugin(baseEffect);
+                    const auto localID = GetLocalFormID(baseEffect);
+                    const bool essential =
+                        localID == kTechniqueMarkerLocalID ||
+                        localID == kMagicCandidatePrimaryLocalID ||
+                        localID == kMagicCandidateSecondaryLocalID;
+
+                    if (sourcePlugin == kCooldownPlugin && !essential) {
+                        SKSE::log::info(
+                            "[BATCH COOLDOWN BYPASS] Technique={} stone={:03X} effect={:08X} local={:06X} name={} uniqueID={} -> dispel",
+                            def->name,
+                            def->localFormID,
+                            baseEffect->GetFormID(),
+                            localID,
+                            baseEffect->GetName(),
+                            a_event->activeEffectUniqueID);
+                        activeEffect->Dispel(true);
+                        return RE::BSEventNotifyControl::kContinue;
+                    }
+                }
+
+                if (!g_techniqueMarker || baseEffect != g_techniqueMarker) {
                     return RE::BSEventNotifyControl::kContinue;
                 }
 
@@ -1491,6 +1521,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.6 remaining-magic batch audit loaded");
+    SKSE::log::info("HE Technique Damage v0.4.7 batch audit with cooldown bypass loaded");
     return true;
 }
