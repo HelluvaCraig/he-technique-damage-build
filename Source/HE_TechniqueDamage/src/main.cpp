@@ -13,6 +13,7 @@ namespace
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
     constexpr bool kBatchAuditDisableCooldowns = false;
+    constexpr bool kPhysicalTraceEnabled = false;
 
     constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
@@ -240,9 +241,9 @@ namespace
 
     bool ShouldTrace(const TechniqueDamageDefinition* a_def)
     {
-        // Keep diagnostics enabled for every physical Technique during the
-        // contact-count validation pass. This does not change damage.
-        return a_def != nullptr;
+        // Physical contact-count validation is complete. Keep production logs
+        // quiet unless a targeted diagnostic build explicitly re-enables this.
+        return kPhysicalTraceEnabled && a_def != nullptr;
     }
 
     float GetNativeAttackDataMultiplier(RE::Actor* a_actor)
@@ -1880,6 +1881,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.9 batch magic normalization loaded");
+    SKSE::log::info("HE Technique Damage v0.5.0 physical-final baseline loaded");
     return true;
 }
