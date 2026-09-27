@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "PrecisionAPI.h"
 #include "TechniqueDamageMap.h"
+#include "MagicTechniqueMap.h"
 
 namespace
 {
@@ -10,6 +11,7 @@ namespace
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     std::unordered_map<RE::FormID, const TechniqueDamageDefinition*> g_damageByStone;
+    std::unordered_map<RE::FormID, const MagicTechniqueDefinition*> g_magicByStone;
     PRECISION_API::IVPrecision1* g_precision = nullptr;
 
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
@@ -115,16 +117,26 @@ namespace
         }
 
         g_damageByStone.clear();
-        std::size_t resolved = 0;
+        std::size_t physicalResolved = 0;
         for (const auto& def : kTechniqueDamageDefinitions) {
             if (auto* stone = dataHandler->LookupForm<RE::TESObjectARMO>(def.localFormID, kStonePlugin)) {
                 g_damageByStone.emplace(stone->GetFormID(), &def);
-                ++resolved;
+                ++physicalResolved;
+            }
+        }
+
+        g_magicByStone.clear();
+        std::size_t magicResolved = 0;
+        for (const auto& def : kMagicTechniqueDefinitions) {
+            if (auto* stone = dataHandler->LookupForm<RE::TESObjectARMO>(def.localFormID, kStonePlugin)) {
+                g_magicByStone.emplace(stone->GetFormID(), &def);
+                ++magicResolved;
             }
         }
 
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
-        SKSE::log::info("Resolved {}/{} physical Technique Stones", resolved, kTechniqueDamageDefinitions.size());
+        SKSE::log::info("Resolved {}/{} physical Technique Stones", physicalResolved, kTechniqueDamageDefinitions.size());
+        SKSE::log::info("Resolved {}/{} Magic Technique proof Stones", magicResolved, kMagicTechniqueDefinitions.size());
         SKSE::log::info("Technique marker {}", g_techniqueMarker ? "resolved" : "NOT resolved");
     }
 
@@ -187,6 +199,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.1.0 loaded");
+    SKSE::log::info("HE Technique Damage v0.2.0 loaded");
     return true;
 }
