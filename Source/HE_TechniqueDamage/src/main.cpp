@@ -23,6 +23,7 @@ namespace
     // v0.3.0 representative Magic damage proof payload spells.
     constexpr RE::FormID kGaleCrescentDamageSpellLocalID = 0x0B43D;
     constexpr RE::FormID kDragonfireSigilDamageSpellLocalID = 0x000F27;
+    constexpr RE::FormID kRunicFirebrandDamageSpellLocalID = 0x000DE2;
     constexpr RE::FormID kRadiantTriplecutSpell1LocalID = 0x0BA97;
     constexpr RE::FormID kRadiantTriplecutSpell2LocalID = 0x0BA99;
     constexpr RE::FormID kRadiantTriplecutSpell3LocalID = 0x0BA98;
@@ -67,6 +68,7 @@ namespace
 
     RE::SpellItem* g_galeCrescentDamageSpell = nullptr;
     RE::SpellItem* g_dragonfireSigilDamageSpell = nullptr;
+    RE::SpellItem* g_runicFirebrandDamageSpell = nullptr;
     RE::SpellItem* g_radiantTriplecutSpell1 = nullptr;
     RE::SpellItem* g_radiantTriplecutSpell2 = nullptr;
     RE::SpellItem* g_radiantTriplecutSpell3 = nullptr;
@@ -1032,6 +1034,14 @@ namespace
                     (a_def.localFormID == 0x89A ? "Ember Infusion" : "Inferno Infusion"));
             break;
 
+        case 0x853:  // Runic Firebrand: dedicated RimSkills fireball spell, effect 0 is the damage payload.
+            configured = SetSpellEffectMagnitude(
+                g_runicFirebrandDamageSpell,
+                0,
+                scaledBudget,
+                "Runic Firebrand / Fireball");
+            break;
+
         case 0x855:  // Runic Disruption: one dedicated air/impact blast.
             configured = ConfigureBatchMagicPayloadGroup(
                 scaledBudget,
@@ -1707,6 +1717,8 @@ namespace
             kGaleCrescentDamageSpellLocalID, kRimSkillsPlugin);
         g_dragonfireSigilDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
             kDragonfireSigilDamageSpellLocalID, kRimSkillsPlugin);
+        g_runicFirebrandDamageSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kRunicFirebrandDamageSpellLocalID, kRimSkillsPlugin);
         g_radiantTriplecutSpell1 = dataHandler->LookupForm<RE::SpellItem>(
             kRadiantTriplecutSpell1LocalID, kRimSkillsPlugin);
         g_radiantTriplecutSpell2 = dataHandler->LookupForm<RE::SpellItem>(
@@ -1762,9 +1774,10 @@ namespace
             g_tier3AlterationProbe ? "Ironflesh" : "MISSING");
 
         SKSE::log::info(
-            "Magic damage proof spells: Gale={} Dragonfire={} Triplecut={}/{}/{}",
+            "Magic damage proof spells: Gale={} Dragonfire={} RunicFirebrand={} Triplecut={}/{}/{}",
             g_galeCrescentDamageSpell ? "OK" : "MISSING",
             g_dragonfireSigilDamageSpell ? "OK" : "MISSING",
+            g_runicFirebrandDamageSpell ? "OK" : "MISSING",
             g_radiantTriplecutSpell1 ? "OK" : "MISSING",
             g_radiantTriplecutSpell2 ? "OK" : "MISSING",
             g_radiantTriplecutSpell3 ? "OK" : "MISSING");
@@ -1881,6 +1894,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.5.0 physical-final baseline loaded");
+    SKSE::log::info("HE Technique Damage v0.5.1 physical+magic final baseline loaded");
     return true;
 }
