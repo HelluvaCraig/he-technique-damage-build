@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "PrecisionAPI.h"
 #include "TechniqueDamageMap.h"
+#include "MagicTechniqueMap.h"
 
 namespace
 {
@@ -8,9 +9,22 @@ namespace
     constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
 
+    constexpr auto kSkyrimPlugin = "Skyrim.esm";
+    constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
+    constexpr RE::FormID kStonefleshLocalID = 0x5AD5D;
+    constexpr RE::FormID kIronfleshLocalID = 0x51B16;
+
     RE::EffectSetting* g_techniqueMarker = nullptr;
     std::unordered_map<RE::FormID, const TechniqueDamageDefinition*> g_damageByStone;
+    std::unordered_map<RE::FormID, const MagicTechniqueDefinition*> g_magicByStone;
+    std::unordered_map<RE::FormID, const char*> g_magicActivationBySpell;
+
+    RE::SpellItem* g_tier1AlterationProbe = nullptr;
+    RE::SpellItem* g_tier2AlterationProbe = nullptr;
+    RE::SpellItem* g_tier3AlterationProbe = nullptr;
+
     PRECISION_API::IVPrecision1* g_precision = nullptr;
+    bool g_spellCastSinkRegistered = false;
 
     const TechniqueDamageDefinition* GetEquippedPhysicalStone(RE::Actor* a_actor)
     {
@@ -28,6 +42,28 @@ namespace
                 continue;
             }
             if (const auto it = g_damageByStone.find(item->GetFormID()); it != g_damageByStone.end()) {
+                return it->second;
+            }
+        }
+        return nullptr;
+    }
+
+    const MagicTechniqueDefinition* GetEquippedMagicStone(RE::Actor* a_actor)
+    {
+        if (!a_actor || g_magicByStone.empty()) {
+            return nullptr;
+        }
+
+        const auto inventory = a_actor->GetInventory([](RE::TESBoundObject& a_object) {
+            return a_object.IsArmor();
+        });
+
+        for (const auto& [item, data] : inventory) {
+            const auto& [count, entry] = data;
+            if (count <= 0 || !entry || !entry->IsWorn()) {
+                continue;
+            }
+            if (const auto it = g_magicByStone.find(item->GetFormID()); it != g_magicByStone.end()) {
                 return it->second;
             }
         }
@@ -106,6 +142,152 @@ namespace
         return result;
     }
 
+    RE::SpellItem* GetAlterationProbe(std::uint8_t a_tier)
+    {
+        switch (a_tier) {
+        case 1:
+            return g_tier1AlterationProbe;
+        case 2:
+            return g_tier2AlterationProbe;
+        case 3:
+            return g_tier3AlterationProbe;
+        default:
+            return nullptr;
+        }
+    }
+
+    const char* GetAlterationProbeName(std::uint8_t a_tier)
+    {
+        switch (a_tier) {
+        case 1:
+            return "Oakflesh/Novice";
+        case 2:
+            return "Stoneflesh/Apprentice";
+        case 3:
+            return "Ironflesh/Adept";
+        default:
+            return "missing";
+        }
+    }
+
+    float CalculateAlterationAdjustedTechniqueCost(
+        RE::Actor* a_actor,
+        const MagicTechniqueDefinition& a_def,
+        float& a_naturalProbeCost)
+    {
+        a_naturalProbeCost = -1.0f;
+
+        auto* probe = GetAlterationProbe(a_def.tier);
+        if (!a_actor || !probe) {
+            return a_def.baseMagicka;
+        }
+
+        // The loaded Skyrim spell is already the final winning record after
+        // Adamant/Mysticism/other overrides. Temporarily replace only its base
+        // cost, ask Skyrim for the final player-adjusted cost, then restore the
+        // spell immediately. Nothing is permanently changed by this proof.
+        a_naturalProbeCost = probe->CalculateMagickaCost(a_actor);
+
+        const auto oldCostOverride = probe->data.costOverride;
+        const auto oldFlags = probe->data.flags;
+
+        probe->data.costOverride = static_cast<std::int32_t>(std::lround(a_def.baseMagicka));
+        probe->data.flags.set(RE::SpellItem::SpellFlag::kCostOverride);
+
+        const float adjusted = probe->CalculateMagickaCost(a_actor);
+
+        probe->data.costOverride = oldCostOverride;
+        probe->data.flags = oldFlags;
+
+        if (!std::isfinite(adjusted) || adjusted < 0.0f) {
+            return a_def.baseMagicka;
+        }
+
+        return adjusted;
+    }
+
+    void LogMagicCostProof(
+        RE::Actor* a_actor,
+        const MagicTechniqueDefinition& a_def,
+        RE::FormID a_signalFormID,
+        const char* a_signalLabel)
+    {
+        float naturalProbeCost = -1.0f;
+        const float adjustedCost = CalculateAlterationAdjustedTechniqueCost(
+            a_actor,
+            a_def,
+            naturalProbeCost);
+
+        SKSE::log::info(
+            "[MAGIC PROOF] Technique={} stone={:03X} tier={} damageBudget={:.1f}x "
+            "baseMagicka={:.1f} probe={} naturalProbeCost={:.2f} "
+            "adjustedTechniqueCost={:.2f} signal={} ({:08X})",
+            a_def.name,
+            a_def.localFormID,
+            a_def.tier,
+            a_def.tierMultiplier,
+            a_def.baseMagicka,
+            GetAlterationProbeName(a_def.tier),
+            naturalProbeCost,
+            adjustedCost,
+            a_signalLabel ? a_signalLabel : "unknown",
+            a_signalFormID);
+    }
+
+    class MagicSpellCastSink final : public RE::BSTEventSink<RE::TESSpellCastEvent>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::TESSpellCastEvent* a_event,
+            RE::BSTEventSource<RE::TESSpellCastEvent>*) override
+        {
+            if (!a_event || !a_event->object || a_event->spell == 0) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* ref = a_event->object.get();
+            if (!ref || !ref->IsPlayerRef()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const auto signalIt = g_magicActivationBySpell.find(a_event->spell);
+            if (signalIt == g_magicActivationBySpell.end()) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            const auto* def = GetEquippedMagicStone(player);
+            if (!def) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            LogMagicCostProof(player, *def, a_event->spell, signalIt->second);
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    void RegisterMagicSpellCastSink()
+    {
+        if (g_spellCastSinkRegistered) {
+            return;
+        }
+
+        auto* source = RE::ScriptEventSourceHolder::GetSingleton();
+        if (!source) {
+            SKSE::log::error("ScriptEventSourceHolder unavailable - Magic cost proof disabled");
+            return;
+        }
+
+        static MagicSpellCastSink sink;
+        source->AddEventSink<RE::TESSpellCastEvent>(&sink);
+        g_spellCastSinkRegistered = true;
+        SKSE::log::info("Magic Technique spell-cast proof sink registered");
+    }
+
     void ResolveForms()
     {
         auto* dataHandler = RE::TESDataHandler::GetSingleton();
@@ -123,8 +305,44 @@ namespace
             }
         }
 
+        g_magicByStone.clear();
+        std::size_t magicResolved = 0;
+        for (const auto& def : kMagicTechniqueDefinitions) {
+            if (auto* stone = dataHandler->LookupForm<RE::TESObjectARMO>(def.localFormID, kStonePlugin)) {
+                g_magicByStone.emplace(stone->GetFormID(), &def);
+                ++magicResolved;
+            }
+        }
+
+        g_magicActivationBySpell.clear();
+        std::size_t activationResolved = 0;
+        for (const auto& signal : kMagicActivationSignals) {
+            if (auto* spell = dataHandler->LookupForm<RE::SpellItem>(signal.localFormID, signal.plugin)) {
+                g_magicActivationBySpell.emplace(spell->GetFormID(), signal.label);
+                ++activationResolved;
+            } else {
+                SKSE::log::warn(
+                    "Magic activation signal NOT resolved: {} {:06X} ({})",
+                    signal.plugin,
+                    signal.localFormID,
+                    signal.label);
+            }
+        }
+
+        g_tier1AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kOakfleshLocalID, kSkyrimPlugin);
+        g_tier2AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kStonefleshLocalID, kSkyrimPlugin);
+        g_tier3AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kIronfleshLocalID, kSkyrimPlugin);
+
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
+
         SKSE::log::info("Resolved {}/{} physical Technique Stones", resolved, kTechniqueDamageDefinitions.size());
+        SKSE::log::info("Resolved {}/{} Magic/Rune Technique Stones", magicResolved, kMagicTechniqueDefinitions.size());
+        SKSE::log::info("Resolved {}/{} Magic activation signals", activationResolved, kMagicActivationSignals.size());
+        SKSE::log::info(
+            "Alteration probes: T1={} T2={} T3={}",
+            g_tier1AlterationProbe ? "Oakflesh" : "MISSING",
+            g_tier2AlterationProbe ? "Stoneflesh" : "MISSING",
+            g_tier3AlterationProbe ? "Ironflesh" : "MISSING");
         SKSE::log::info("Technique marker {}", g_techniqueMarker ? "resolved" : "NOT resolved");
     }
 
@@ -160,6 +378,7 @@ namespace
             break;
         case SKSE::MessagingInterface::kDataLoaded:
             ResolveForms();
+            RegisterMagicSpellCastSink();
             RegisterPrecision();
             break;
         default:
@@ -187,6 +406,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.1.0 loaded");
+    SKSE::log::info("HE Technique Damage v0.2.0 Magic cost proof loaded");
     return true;
 }
