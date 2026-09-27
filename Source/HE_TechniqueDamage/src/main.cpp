@@ -368,6 +368,21 @@ namespace
         }
     };
 
+    bool IsRepresentativeMagicTraceStone(RE::FormID a_localFormID)
+    {
+        switch (a_localFormID) {
+        case 0x87A:  // Gale Crescent
+        case 0x8A0:  // Radiant Triplecut
+        case 0x87B:  // Moonlit Severance
+        case 0x847:  // Dragonfire Sigil
+        case 0x88F:  // Aurochs Charge
+        case 0x89A:  // Ember Infusion
+            return true;
+        default:
+            return false;
+        }
+    }
+
     class MagicCandidateEffectSink final : public RE::BSTEventSink<RE::TESMagicEffectApplyEvent>
     {
     public:
@@ -381,13 +396,7 @@ namespace
 
             auto* caster = a_event->caster.get();
             auto* target = a_event->target.get();
-            if (!caster || !caster->IsPlayerRef() || !target || !target->IsPlayerRef()) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
-            const RE::FormID primaryID = g_magicCandidatePrimary ? g_magicCandidatePrimary->GetFormID() : 0;
-            const RE::FormID secondaryID = g_magicCandidateSecondary ? g_magicCandidateSecondary->GetFormID() : 0;
-            if (a_event->magicEffect != primaryID && a_event->magicEffect != secondaryID) {
+            if (!caster || !caster->IsPlayerRef() || !target) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -401,19 +410,40 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            const bool primary = a_event->magicEffect == primaryID;
-            SKSE::log::info(
-                "[MAGIC CANDIDATE] Technique={} stone={:03X} effect={:08X} candidate={} target=player",
-                def->name,
-                def->localFormID,
-                a_event->magicEffect,
-                primary ? "0x800-primary" : "0x805-secondary");
+            const RE::FormID primaryID = g_magicCandidatePrimary ? g_magicCandidatePrimary->GetFormID() : 0;
+            const RE::FormID secondaryID = g_magicCandidateSecondary ? g_magicCandidateSecondary->GetFormID() : 0;
 
-            if (primary) {
-                ChargeMagicTechniqueCost(
-                    player,
-                    *def,
-                    a_event->magicEffect);
+            if (target->IsPlayerRef()) {
+                if (a_event->magicEffect != primaryID && a_event->magicEffect != secondaryID) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                const bool primary = a_event->magicEffect == primaryID;
+                SKSE::log::info(
+                    "[MAGIC CANDIDATE] Technique={} stone={:03X} effect={:08X} candidate={} target=player",
+                    def->name,
+                    def->localFormID,
+                    a_event->magicEffect,
+                    primary ? "0x800-primary" : "0x805-secondary");
+
+                if (primary) {
+                    ChargeMagicTechniqueCost(
+                        player,
+                        *def,
+                        a_event->magicEffect);
+                }
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (IsRepresentativeMagicTraceStone(def->localFormID)) {
+                SKSE::log::info(
+                    "[MAGIC HIT TRACE] Technique={} stone={:03X} effect={:08X} target={:08X} markerActive={}",
+                    def->name,
+                    def->localFormID,
+                    a_event->magicEffect,
+                    target->GetFormID(),
+                    TechniqueMarkerActive(player));
             }
 
             return RE::BSEventNotifyControl::kContinue;
@@ -665,6 +695,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.2.7 Magic Alteration charge proof loaded");
+    SKSE::log::info("HE Technique Damage v0.2.8 Magic hit trace loaded");
     return true;
 }
