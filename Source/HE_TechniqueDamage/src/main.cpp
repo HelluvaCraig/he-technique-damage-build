@@ -176,20 +176,6 @@ namespace
         return native;
     }
 
-    std::uint8_t GetMagicPhysicalContactCount(const MagicTechniqueDefinition* a_def)
-    {
-        if (!a_def) {
-            return 0;
-        }
-
-        switch (a_def->localFormID) {
-        case 0x832:  // Radiant Blade Dance: seven genuine weapon contacts.
-            return 7;
-        default:
-            return 0;
-        }
-    }
-
     PRECISION_API::PreHitCallbackReturn OnPrecisionPreHit(const PRECISION_API::PrecisionHitData& a_hit)
     {
         PRECISION_API::PreHitCallbackReturn result{};
@@ -199,62 +185,21 @@ namespace
             return result;
         }
 
-        const auto* physicalDef = GetEquippedPhysicalStone(attacker);
-        if (physicalDef && physicalDef->contacts > 0) {
-            const float perContactShare =
-                physicalDef->tierMultiplier / static_cast<float>(physicalDef->contacts);
-
-            // Precision multiplies this modifier into Skyrim's weapon-damage path.
-            // Divide away the animation's native attack-data multiplier so the
-            // Technique starts from the equipped weapon's calculated damage.
-            const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
-            const float precisionMultiplier =
-                std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
-
-            if (ShouldTrace(physicalDef)) {
-                SKSE::log::info(
-                    "[TRACE PRE] {} form={:X} tier={} contacts={} share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
-                    physicalDef->name,
-                    physicalDef->localFormID,
-                    physicalDef->tierMultiplier,
-                    physicalDef->contacts,
-                    perContactShare,
-                    nativeAttackMult,
-                    precisionMultiplier);
-            }
-
-            result.modifiers.push_back({
-                PRECISION_API::PreHitModifier::ModifierType::Damage,
-                PRECISION_API::PreHitModifier::ModifierOperation::Multiplicative,
-                precisionMultiplier
-            });
-
+        const auto* def = GetEquippedPhysicalStone(attacker);
+        if (!def || def->contacts == 0) {
             return result;
         }
 
-        // Magic/Rune weapon arts normally preserve their physical weapon contacts.
-        // For explicitly mapped multi-hit hybrids, distribute ONE equipped-weapon
-        // damage budget across all genuine physical contacts so repeated hits do
-        // not multiply the weapon component several times.
-        const auto* magicDef = GetEquippedMagicStone(attacker);
-        const auto magicContacts = GetMagicPhysicalContactCount(magicDef);
-        if (!magicDef || magicContacts == 0) {
-            return result;
-        }
-
-        const float perContactShare = 1.0f / static_cast<float>(magicContacts);
+        const float perContactShare = def->tierMultiplier / static_cast<float>(def->contacts);
         const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
-        const float precisionMultiplier =
-            std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
+        const float precisionMultiplier = std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
 
-        SKSE::log::info(
-            "[MAGIC PHYSICAL PRE] {} stone={:03X} contacts={} weaponBudget=1.0 share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
-            magicDef->name,
-            magicDef->localFormID,
-            magicContacts,
-            perContactShare,
-            nativeAttackMult,
-            precisionMultiplier);
+        if (ShouldTrace(def)) {
+            SKSE::log::info(
+                "[TRACE PRE] {} form={:X} tier={} contacts={} share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
+                def->name, def->localFormID, def->tierMultiplier, def->contacts,
+                perContactShare, nativeAttackMult, precisionMultiplier);
+        }
 
         result.modifiers.push_back({
             PRECISION_API::PreHitModifier::ModifierType::Damage,
@@ -272,28 +217,26 @@ namespace
             return;
         }
 
-        const auto* def = GetEquippedPhysicalStone(attacker);
-        const auto* magicDef = GetEquippedMagicStone(attacker);
-        const auto magicContacts = GetMagicPhysicalContactCount(magicDef);
-
         const float actualAttackMult = a_hit.attackData ? a_hit.attackData->data.damageMult : -1.0f;
         const bool actualLeftAttack = a_hit.attackData ? a_hit.attackData->IsLeftAttack() : false;
         const RE::FormID weaponFormID = a_hit.weapon ? a_hit.weapon->GetFormID() : 0;
+        const RE::FormID projectileFormID = a_precisionHit.projectile ? a_precisionHit.projectile->GetFormID() : 0;
 
+        const auto* def = GetEquippedPhysicalStone(attacker);
         if (ShouldTrace(def)) {
             SKSE::log::info(
-                "[TRACE POST] {} form={:X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
-                def->name, def->localFormID, weaponFormID, actualLeftAttack,
+                "[TRACE POST] {} form={:X} weapon={:08X} projectile={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+                def->name, def->localFormID, weaponFormID, projectileFormID, actualLeftAttack,
                 actualAttackMult, a_hit.totalDamage, a_hit.physicalDamage, a_hit.resistedPhysicalDamage);
             return;
         }
 
-        if (magicDef && magicContacts > 0) {
+        const auto* magicDef = GetEquippedMagicStone(attacker);
+        if (magicDef && magicDef->localFormID == 0x832) {
             SKSE::log::info(
-                "[MAGIC PHYSICAL POST] {} stone={:03X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
-                magicDef->name,
-                magicDef->localFormID,
+                "[RADIANT PHYSICAL TRACE] weapon={:08X} projectile={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
                 weaponFormID,
+                projectileFormID,
                 actualLeftAttack,
                 actualAttackMult,
                 a_hit.totalDamage,
@@ -733,6 +676,7 @@ namespace
         case 0x88F:  // Aurochs Charge
         case 0x89A:  // Ember Infusion
         case 0x87D:  // Moonshard Sigil outlier trace
+        case 0x832:  // Radiant Blade Dance end-burst trace
             return true;
         default:
             return false;
@@ -843,7 +787,7 @@ namespace
                         "[MAGIC MGEF TRACE] Technique={} stone={:03X} target={:08X} "
                         "effectPlugin={} effectLocal={:06X} effectRuntime={:08X} "
                         "editor={} name={} archetype={} primaryAV={} resistAV={} "
-                        "detrimental={} hostile={} baseCost={:.3f} projectile={:08X} explosion={:08X}",
+                        "detrimental={} hostile={} baseCost={:.3f} area={} projectile={:08X} projectileExplosion={:08X} explosion={:08X}",
                         def->name,
                         def->localFormID,
                         target->GetFormID(),
@@ -858,7 +802,10 @@ namespace
                         mgef->IsDetrimental(),
                         mgef->IsHostile(),
                         mgef->data.baseCost,
+                        mgef->data.spellmakingArea,
                         mgef->data.projectileBase ? mgef->data.projectileBase->GetFormID() : 0,
+                        (mgef->data.projectileBase && mgef->data.projectileBase->data.explosionType) ?
+                            mgef->data.projectileBase->data.explosionType->GetFormID() : 0,
                         mgef->data.explosion ? mgef->data.explosion->GetFormID() : 0);
                 } else {
                     SKSE::log::info(
@@ -1252,6 +1199,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.3.7 Radiant hybrid physical normalization loaded");
+    SKSE::log::info("HE Technique Damage v0.3.8 Radiant end-burst diagnostic loaded");
     return true;
 }
