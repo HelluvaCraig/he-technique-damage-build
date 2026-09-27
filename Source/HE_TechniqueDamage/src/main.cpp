@@ -12,7 +12,7 @@ namespace
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
-    constexpr bool kBatchAuditDisableCooldowns = true;
+    constexpr bool kBatchAuditDisableCooldowns = false;
 
     constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
@@ -1521,6 +1521,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.7 batch audit with cooldown bypass loaded");
+    SKSE::log::info("HE Technique Damage v0.4.8 batch retier baseline - normal cooldowns loaded");
     return true;
 }
