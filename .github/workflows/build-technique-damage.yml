@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.3.4-direct-magic-rollout
+          name: HE_TechniqueDamage-v0.3.5-direct-magic-batch2-moonshard-trace
           path: artifact
