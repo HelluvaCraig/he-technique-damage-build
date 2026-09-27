@@ -60,64 +60,39 @@
     stroke:none;
   }
 
-  /* The whole sigil remains readable in its normal resting state. */
+  /* Base ghost: all three tier shapes stay faintly visible. */
   #base {
     color:var(--white);
     opacity:1;
   }
-
   #base .tierBorder,
   #base .tierMoons,
   #base .tierSword {
-    opacity:.72;
-    transition:opacity .14s ease;
+    opacity:.18;
   }
 
-  /* The live fill only contains the section owned by the equipped tier. */
-  #charged {
+  .tierFill {
     color:var(--white);
-    clip-path:inset(100% 0 0 0);
     opacity:1;
     filter:none;
     transition:clip-path .065s linear, color .13s ease, filter .18s ease;
   }
 
-  #charged .tierMoons,
-  #charged .tierSword { display:none; }
-  #widget.tier2 #charged .tierMoons,
-  #widget.tier3 #charged .tierMoons { display:inline; }
-  #widget.tier3 #charged .tierSword { display:inline; }
+  /* Each fill layer owns exactly one cooldown. */
+  #tier1Fill .tierMoons,
+  #tier1Fill .tierSword { display:none; }
 
-  /* No Stone: a clear but quiet white sigil, not an almost invisible ghost. */
-  #widget.unequipped #base .tierBorder,
-  #widget.unequipped #base .tierMoons,
-  #widget.unequipped #base .tierSword { opacity:.68; }
-  #widget.unequipped #charged { opacity:0; filter:none; }
+  #tier2Fill .tierBorder,
+  #tier2Fill .tierSword { display:none; }
 
-  /* Cooldown: only the owned tier section fades back, then refills upward in white. */
-  #widget.cooling.tier1 #base .tierBorder { opacity:.12; }
-  #widget.cooling.tier2 #base .tierBorder,
-  #widget.cooling.tier2 #base .tierMoons { opacity:.12; }
-  #widget.cooling.tier3 #base .tierBorder,
-  #widget.cooling.tier3 #base .tierMoons,
-  #widget.cooling.tier3 #base .tierSword { opacity:.12; }
-  #widget.cooling #charged {
-    color:var(--white);
-    opacity:1;
-    filter:none;
-  }
+  #tier3Fill .tierBorder,
+  #tier3Fill .tierMoons { display:none; }
 
-  /* Ready but blocked by weapon/resource requirements: owned section is solid white. */
-  #widget.blocked #charged {
-    color:var(--white);
-    opacity:1;
-    filter:none;
-  }
-
-  /* Ready and usable: owned tier section turns cyan. */
-  #widget.ready #charged {
+  /* Equipped tier uses cyan; the other tiers remain white. */
+  #tier1Fill.equipped,
+  #tier2Fill.equipped,
+  #tier3Fill.equipped {
     color:var(--ready);
-    opacity:1;
     filter:drop-shadow(0 0 1.15px rgba(120,215,226,.95));
   }
 
@@ -227,9 +202,11 @@
 </style>
 </head>
 <body>
-<div id="widget" class="unequipped tier1">
+<div id="widget">
   <div id="base" class="sigilLayer"></div>
-  <div id="charged" class="sigilLayer"></div>
+  <div id="tier1Fill" class="sigilLayer tierFill"></div>
+  <div id="tier2Fill" class="sigilLayer tierFill"></div>
+  <div id="tier3Fill" class="sigilLayer tierFill"></div>
 </div>
 
 <div id="settingsPanel" aria-hidden="true">
@@ -274,7 +251,9 @@
 (() => {
   const widget = document.getElementById('widget');
   const base = document.getElementById('base');
-  const charged = document.getElementById('charged');
+  const tier1Fill = document.getElementById('tier1Fill');
+  const tier2Fill = document.getElementById('tier2Fill');
+  const tier3Fill = document.getElementById('tier3Fill');
   const panel = document.getElementById('settingsPanel');
 
   const leftSlider = document.getElementById('leftSlider');
@@ -292,66 +271,57 @@
   const art = `
     <svg viewBox="0 0 100 100" aria-hidden="true">
       <g class="tierBorder">
-        <path class="lineHeavy" d="M50 4 L96 50 L50 96 L4 50 Z"/>
-        <path class="lineMedium" d="M50 9 L91 50 L50 91 L9 50 Z"/>
-        <path class="lineFine" d="M50 4 V0 M50 96 V100 M4 50 H0 M96 50 H100"/>
-        <path class="lineFine" d="M50 4 l-5 7 M50 4 l5 7 M50 96 l-5-7 M50 96 l5-7"/>
-        <path class="lineFine" d="M4 50 l7-5 M4 50 l7 5 M96 50 l-7-5 M96 50 l-7 5"/>
-        <circle class="solid" cx="50" cy="8.3" r="1.0"/>
-        <circle class="solid" cx="91.7" cy="50" r="1.0"/>
-        <circle class="solid" cx="50" cy="91.7" r="1.0"/>
-        <circle class="solid" cx="8.3" cy="50" r="1.0"/>
-
+        <path class="lineHeavy" d="M50 5 L95 50 L50 95 L5 50 Z"/>
+        <path class="lineMedium" d="M50 11 L89 50 L50 89 L11 50 Z"/>
+        <path class="lineFine" d="M50 5 V1 M50 95 V99"/>
         <g class="edgeRunes lineFine">
-          <path d="M28 20 L31 25 L31 17 M31 21 L27 17 M31 21 L35 17"/>
-          <path d="M69 25 L69 17 M65 21 L69 17 L73 21"/>
-          <path d="M79 30 L84 34 L79 38"/>
-          <path d="M82 61 L78 65 L83 68 L79 72"/>
-          <path d="M70 76 L70 84 M70 78 L74 76 M70 81 L73 80"/>
-          <path d="M30 76 L30 84 M30 79 L26 82 M30 79 L34 82"/>
-          <path d="M18 61 L22 64 L19 68 L23 72"/>
-          <path d="M21 30 L16 34 L21 38"/>
+          <path d="M24 15 V25 M24 20 L19 15 M24 20 L29 15"/>
+          <path d="M76 25 V15 M71 20 L76 15 L81 20"/>
+          <path d="M91 35 L85 40 L91 45"/>
+          <path d="M88 59 L84 64 L89 67 L85 72"/>
+          <path d="M73 83 V73 M73 76 L79 73 M73 79 L78 77"/>
+          <path d="M27 73 V83 M27 73 L33 77 L27 79 M27 79 L33 83"/>
+          <path d="M12 59 L17 64 L13 68 L18 73"/>
+          <path d="M9 35 L15 40 L9 45"/>
         </g>
       </g>
 
       <g class="tierMoons">
-        <path class="solid" d="M38 38 A12 12 0 1 0 38 62 A9 12 0 0 1 38 38 Z"/>
-        <path class="solid" d="M62 38 A12 12 0 1 1 62 62 A9 12 0 0 0 62 38 Z"/>
-        <path class="lineFine" d="M24 50 H27 M73 50 H76"/>
+        <path class="solid" fill-rule="evenodd" d="M40 36 A14 14 0 1 0 40 64 A8.2 11.2 0 1 1 40 36 Z"/>
+        <path class="solid" fill-rule="evenodd" d="M60 36 A14 14 0 1 1 60 64 A8.2 11.2 0 1 0 60 36 Z"/>
       </g>
 
       <g class="tierSword">
-        <path class="solid" d="M50 12 L53 18 L52 66 L50 72 L48 66 L47 18 Z"/>
-        <path class="lineFine" d="M50 18 V66"/>
-        <path class="solid" d="M36 69 L64 69 L60 73 L40 73 Z"/>
-        <rect class="solid" x="48.2" y="72.5" width="3.6" height="12" rx=".8"/>
-        <path class="lineFine" d="M48.5 76 H51.5 M48.5 79 H51.5 M48.5 82 H51.5"/>
-        <circle class="solid" cx="50" cy="88" r="3.1"/>
-        <path class="lineFine" d="M47.8 88 H52.2 M50 85.8 V90.2"/>
+        <path class="solid" d="M50 11 L53.2 17.8 L52.1 65.8 L50 72.2 L47.9 65.8 L46.8 17.8 Z"/>
+        <path class="lineFine" d="M50 18.2 V65.6"/>
+        <path class="solid" d="M35 69.2 H65 L60.8 73.4 H39.2 Z"/>
+        <rect class="solid" x="48.35" y="72.6" width="3.3" height="12.2" rx=".78"/>
+        <path class="lineFine" d="M48.7 76.2 H51.3 M48.7 79.2 H51.3 M48.7 82.2 H51.3"/>
+        <circle class="solid" cx="50" cy="88.2" r="2.9"/>
+        <path class="lineFine" d="M47.95 88.2 H52.05 M50 86.15 V90.25"/>
       </g>
-    </svg>`;
+    </svg>`
 
   base.innerHTML = art;
-  charged.innerHTML = art;
+  tier1Fill.innerHTML = art;
+  tier2Fill.innerHTML = art;
+  tier3Fill.innerHTML = art;
 
   function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, Number(v) || 0));
   }
 
-  function setFill(value) {
+  function setLayerFill(layer, value) {
     const p = clamp(value, 0, 1);
-    charged.style.clipPath = `inset(${((1 - p) * 100).toFixed(2)}% 0 0 0)`;
+    layer.style.clipPath = `inset(${((1 - p) * 100).toFixed(2)}% 0 0 0)`;
   }
 
-  function setMode(mode) {
-    widget.classList.remove('unequipped', 'blocked', 'cooling', 'ready');
-    widget.classList.add(mode);
-  }
-
-  function setTier(tier) {
-    const t = Math.max(1, Math.min(3, Number(tier) || 1));
-    widget.classList.remove('tier1', 'tier2', 'tier3');
-    widget.classList.add(`tier${t}`);
+  function setEquippedTier(tier) {
+    [tier1Fill, tier2Fill, tier3Fill].forEach(layer => layer.classList.remove('equipped'));
+    const t = Number(tier) || 0;
+    if (t === 1) tier1Fill.classList.add('equipped');
+    if (t === 2) tier2Fill.classList.add('equipped');
+    if (t === 3) tier3Fill.classList.add('equipped');
   }
 
   function updateSliderBounds() {
@@ -454,23 +424,13 @@
     },
 
     setState(state) {
-      if (!state || !state.equipped) {
-        setTier(1);
-        setFill(0);
-        setMode('unequipped');
-        return;
-      }
+      const equippedTier = state ? Number(state.equippedTier) || 0 : 0;
+      setEquippedTier(equippedTier);
 
-      setTier(state.tier);
+      setLayerFill(tier1Fill, state ? state.p1 : 1);
+      setLayerFill(tier2Fill, state ? state.p2 : 1);
+      setLayerFill(tier3Fill, state ? state.p3 : 1);
 
-      if (state.cooling) {
-        setFill(state.progress);
-        setMode('cooling');
-        return;
-      }
-
-      setFill(1);
-      setMode(state.conditionsValid ? 'ready' : 'blocked');
     }
   };
 })();
