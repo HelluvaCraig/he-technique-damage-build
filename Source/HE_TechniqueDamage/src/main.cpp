@@ -46,7 +46,7 @@ namespace
     constexpr RE::FormID kRadiantFinisherDragonrendEffectLocalID = 0x000AFF;
     constexpr RE::FormID kRadiantFinisherCarianImpactEffectLocalID = 0x000AF8;
     constexpr RE::FormID kRadiantFinisherExtraDamageEffectLocalID = 0x000AFA;
-    constexpr float kRadiantFinisherDamageScale = 0.25f;
+    constexpr float kRadiantFinisherDamageScale = 0.15f;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -1401,6 +1401,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.1 Radiant finisher 25-percent balance proof loaded");
+    SKSE::log::info("HE Technique Damage v0.4.2 Radiant finisher 15-percent balance loaded");
     return true;
 }
