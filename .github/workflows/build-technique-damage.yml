@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.3.0-magic-damage-proof
+          name: HE_TechniqueDamage-v0.3.1-magic-mgef-trace
           path: artifact
