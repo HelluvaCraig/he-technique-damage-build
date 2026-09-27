@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "he-technique-hud",
+  "version-string": "0.4.0",
+  "supports": "windows & x64",
+  "dependencies": [
+    "commonlibsse-ng-ae"
+  ]
+}
