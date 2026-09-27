@@ -42,6 +42,11 @@ namespace
     constexpr RE::FormID kRadiantBladeDanceSpell150LocalID = 0x0BA38;
     constexpr RE::FormID kRadiantBladeDanceFinalLocalID = 0x0BA39;
     constexpr RE::FormID kRadiantCarianImpactSpellLocalID = 0x000B0A;
+    constexpr RE::FormID kRadiantFinisherSkuldafnEffectLocalID = 0x000B02;
+    constexpr RE::FormID kRadiantFinisherDragonrendEffectLocalID = 0x000AFF;
+    constexpr RE::FormID kRadiantFinisherCarianImpactEffectLocalID = 0x000AF8;
+    constexpr RE::FormID kRadiantFinisherExtraDamageEffectLocalID = 0x000AFA;
+    constexpr float kRadiantFinisherDamageScale = 0.25f;
 
     RE::EffectSetting* g_techniqueMarker = nullptr;
     RE::EffectSetting* g_magicCandidatePrimary = nullptr;
@@ -77,6 +82,18 @@ namespace
     RE::SpellItem* g_radiantBladeDanceSpell150 = nullptr;
     RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
     RE::SpellItem* g_radiantCarianImpactSpell = nullptr;
+
+    struct RadiantFinisherEffectRef
+    {
+        RE::Effect* effect{ nullptr };
+        float nativeMagnitude{ 0.0f };
+        RE::FormID spellFormID{ 0 };
+        RE::FormID effectFormID{ 0 };
+    };
+
+    std::vector<RadiantFinisherEffectRef> g_radiantFinisherDamageEffects;
+    RE::BGSExplosion* g_radiantFinisherProjectileExplosion = nullptr;
+    float g_radiantFinisherProjectileExplosionNativeDamage = 0.0f;
 
     PRECISION_API::IVPrecision1* g_precision = nullptr;
     bool g_spellCastSinkRegistered = false;
@@ -388,6 +405,123 @@ namespace
         return true;
     }
 
+    bool IsRadiantFinisherDamageEffectLocalID(RE::FormID a_localID)
+    {
+        switch (a_localID) {
+        case kRadiantFinisherSkuldafnEffectLocalID:
+        case kRadiantFinisherDragonrendEffectLocalID:
+        case kRadiantFinisherCarianImpactEffectLocalID:
+        case kRadiantFinisherExtraDamageEffectLocalID:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    void ResolveRadiantFinisherDamagePayloads(RE::TESDataHandler* a_dataHandler)
+    {
+        g_radiantFinisherDamageEffects.clear();
+        g_radiantFinisherProjectileExplosion = nullptr;
+        g_radiantFinisherProjectileExplosionNativeDamage = 0.0f;
+
+        if (!a_dataHandler) {
+            return;
+        }
+
+        for (auto* spell : a_dataHandler->GetFormArray<RE::SpellItem>()) {
+            if (!spell) {
+                continue;
+            }
+
+            const auto* spellFile = spell->GetFile();
+            if (!spellFile || std::string_view(spellFile->GetFilename()) != kRimSkillsPlugin) {
+                continue;
+            }
+
+            for (auto* effect : spell->effects) {
+                if (!effect || !effect->baseEffect) {
+                    continue;
+                }
+
+                auto* baseEffect = effect->baseEffect;
+                const RE::FormID localID = baseEffect->GetFormID() & 0x00FFFFFF;
+                if (!IsRadiantFinisherDamageEffectLocalID(localID)) {
+                    continue;
+                }
+
+                g_radiantFinisherDamageEffects.push_back({
+                    effect,
+                    effect->effectItem.magnitude,
+                    spell->GetFormID(),
+                    baseEffect->GetFormID()
+                });
+
+                SKSE::log::info(
+                    "[RADIANT FINISHER RESOLVE] spell={:08X} spellName={} effect={:08X} effectName={} nativeMagnitude={:.3f}",
+                    spell->GetFormID(),
+                    spell->GetName(),
+                    baseEffect->GetFormID(),
+                    baseEffect->GetName(),
+                    effect->effectItem.magnitude);
+
+                if (localID == kRadiantFinisherCarianImpactEffectLocalID &&
+                    baseEffect->data.projectileBase &&
+                    baseEffect->data.projectileBase->data.explosionType &&
+                    !g_radiantFinisherProjectileExplosion) {
+                    g_radiantFinisherProjectileExplosion = baseEffect->data.projectileBase->data.explosionType;
+                    g_radiantFinisherProjectileExplosionNativeDamage =
+                        g_radiantFinisherProjectileExplosion->data.damage;
+
+                    SKSE::log::info(
+                        "[RADIANT FINISHER RESOLVE] projectileExplosion={:08X} nativeDamage={:.3f}",
+                        g_radiantFinisherProjectileExplosion->GetFormID(),
+                        g_radiantFinisherProjectileExplosionNativeDamage);
+                }
+            }
+        }
+
+        SKSE::log::info(
+            "[RADIANT FINISHER RESOLVE] damageEffectRefs={} explosionResolved={}",
+            g_radiantFinisherDamageEffects.size(),
+            g_radiantFinisherProjectileExplosion != nullptr);
+    }
+
+    void ConfigureRadiantFinisherDamageScale()
+    {
+        for (auto& ref : g_radiantFinisherDamageEffects) {
+            if (!ref.effect) {
+                continue;
+            }
+
+            const float before = ref.effect->effectItem.magnitude;
+            const float after = ref.nativeMagnitude * kRadiantFinisherDamageScale;
+            ref.effect->effectItem.magnitude = after;
+
+            SKSE::log::info(
+                "[RADIANT FINISHER BALANCE] spell={:08X} effect={:08X} magnitudeBefore={:.3f} native={:.3f} magnitudeAfter={:.3f} scale={:.3f}",
+                ref.spellFormID,
+                ref.effectFormID,
+                before,
+                ref.nativeMagnitude,
+                after,
+                kRadiantFinisherDamageScale);
+        }
+
+        if (g_radiantFinisherProjectileExplosion) {
+            const float before = g_radiantFinisherProjectileExplosion->data.damage;
+            const float after = g_radiantFinisherProjectileExplosionNativeDamage * kRadiantFinisherDamageScale;
+            g_radiantFinisherProjectileExplosion->data.damage = after;
+
+            SKSE::log::info(
+                "[RADIANT FINISHER BALANCE] projectileExplosion={:08X} damageBefore={:.3f} native={:.3f} damageAfter={:.3f} scale={:.3f}",
+                g_radiantFinisherProjectileExplosion->GetFormID(),
+                before,
+                g_radiantFinisherProjectileExplosionNativeDamage,
+                after,
+                kRadiantFinisherDamageScale);
+        }
+    }
+
     void DumpRadiantCarianImpactPayload()
     {
         auto* spell = g_radiantCarianImpactSpell;
@@ -554,6 +688,7 @@ namespace
         }
 
         case 0x832: {
+            ConfigureRadiantFinisherDamageScale();
             DumpRadiantCarianImpactPayload();
 
             // Actual animation event counts:
@@ -1179,6 +1314,8 @@ namespace
         SKSE::log::info(
             "Radiant finisher spell: CarianImpact={}",
             g_radiantCarianImpactSpell ? "OK" : "MISSING");
+        ResolveRadiantFinisherDamagePayloads(dataHandler);
+
         if (auto* player = RE::PlayerCharacter::GetSingleton()) {
             for (const auto& def : kMagicTechniqueDefinitions) {
                 ConfigureRepresentativeMagicDamage(player, def);
@@ -1264,6 +1401,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.4.0 Radiant finisher payload diagnostic loaded");
+    SKSE::log::info("HE Technique Damage v0.4.1 Radiant finisher 25-percent balance proof loaded");
     return true;
 }
