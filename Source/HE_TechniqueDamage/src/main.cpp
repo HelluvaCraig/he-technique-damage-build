@@ -77,7 +77,7 @@ namespace
         }
 
         auto* magicTarget = a_actor->AsMagicTarget();
-        const auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
+        auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
         if (!effects) {
             return false;
         }
@@ -91,6 +91,13 @@ namespace
             }
         }
         return false;
+    }
+
+    bool ShouldTrace(const TechniqueDamageDefinition* a_def)
+    {
+        // Keep diagnostics enabled for every physical Technique during the
+        // contact-count validation pass. This does not change damage.
+        return a_def != nullptr;
     }
 
     float GetNativeAttackDataMultiplier(RE::Actor* a_actor)
@@ -133,6 +140,13 @@ namespace
         const float nativeAttackMult = GetNativeAttackDataMultiplier(attacker);
         const float precisionMultiplier = std::clamp(perContactShare / nativeAttackMult, 0.01f, 100.0f);
 
+        if (ShouldTrace(def)) {
+            SKSE::log::info(
+                "[TRACE PRE] {} form={:X} tier={} contacts={} share={:.4f} currentAttackMult={:.4f} appliedPrecisionMult={:.4f}",
+                def->name, def->localFormID, def->tierMultiplier, def->contacts,
+                perContactShare, nativeAttackMult, precisionMultiplier);
+        }
+
         result.modifiers.push_back({
             PRECISION_API::PreHitModifier::ModifierType::Damage,
             PRECISION_API::PreHitModifier::ModifierOperation::Multiplicative,
@@ -140,6 +154,28 @@ namespace
         });
 
         return result;
+    }
+
+    void OnPrecisionPostHit(const PRECISION_API::PrecisionHitData& a_precisionHit, const RE::HitData& a_hit)
+    {
+        auto* attacker = a_precisionHit.attacker;
+        if (!attacker || !attacker->IsPlayerRef() || !TechniqueMarkerActive(attacker)) {
+            return;
+        }
+
+        const auto* def = GetEquippedPhysicalStone(attacker);
+        if (!ShouldTrace(def)) {
+            return;
+        }
+
+        const float actualAttackMult = a_hit.attackData ? a_hit.attackData->data.damageMult : -1.0f;
+        const bool actualLeftAttack = a_hit.attackData ? a_hit.attackData->IsLeftAttack() : false;
+        const RE::FormID weaponFormID = a_hit.weapon ? a_hit.weapon->GetFormID() : 0;
+
+        SKSE::log::info(
+            "[TRACE POST] {} form={:X} weapon={:08X} leftAttack={} actualAttackMult={:.4f} totalDamage={:.4f} physicalDamage={:.4f} resistedPhysical={:.4f}",
+            def->name, def->localFormID, weaponFormID, actualLeftAttack,
+            actualAttackMult, a_hit.totalDamage, a_hit.physicalDamage, a_hit.resistedPhysicalDamage);
     }
 
     RE::SpellItem* GetAlterationProbe(std::uint8_t a_tier)
@@ -358,11 +394,18 @@ namespace
             return;
         }
 
-        const auto res = g_precision->AddPreHitCallback(SKSE::GetPluginHandle(), OnPrecisionPreHit);
-        if (res == PRECISION_API::APIResult::OK || res == PRECISION_API::APIResult::AlreadyRegistered) {
+        const auto preRes = g_precision->AddPreHitCallback(SKSE::GetPluginHandle(), OnPrecisionPreHit);
+        if (preRes == PRECISION_API::APIResult::OK || preRes == PRECISION_API::APIResult::AlreadyRegistered) {
             SKSE::log::info("Precision pre-hit Technique damage callback registered");
         } else {
-            SKSE::log::error("Precision pre-hit callback registration failed ({})", static_cast<int>(res));
+            SKSE::log::error("Precision pre-hit callback registration failed ({})", static_cast<int>(preRes));
+        }
+
+        const auto postRes = g_precision->AddPostHitCallback(SKSE::GetPluginHandle(), OnPrecisionPostHit);
+        if (postRes == PRECISION_API::APIResult::OK || postRes == PRECISION_API::APIResult::AlreadyRegistered) {
+            SKSE::log::info("Precision post-hit diagnostic callback registered");
+        } else {
+            SKSE::log::error("Precision post-hit callback registration failed ({})", static_cast<int>(postRes));
         }
     }
 
