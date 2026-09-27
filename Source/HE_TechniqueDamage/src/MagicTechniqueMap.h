@@ -45,7 +45,7 @@ inline constexpr std::array<MagicTechniqueDefinition, 36> kMagicTechniqueDefinit
     { 0x87D, 2,  7.0f,  65.0f, "Moonshard Sigil" },
     { 0x87E, 3, 10.0f, 100.0f, "Runic Might" },
     { 0x88E, 3, 10.0f, 100.0f, "Telekinetic Maelstrom" },
-    { 0x88F, 3, 10.0f, 100.0f, "Aurochs Charge" },
+    { 0x88F, 2,  7.0f,  65.0f, "Aurochs Charge" },
     { 0x890, 1,  4.5f,  40.0f, "Chilling Mist" },
     { 0x891, 2,  7.0f,  65.0f, "Crimson Severance" },
     { 0x893, 3, 10.0f, 100.0f, "Elder Mooncleave" },
