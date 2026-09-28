@@ -16,18 +16,23 @@ namespace
     constexpr bool kPhysicalTraceEnabled = false;
 
     // Shared Technique Charge system.
-    // OAR reads Variable01 directly: Adept >=1, Expert >=2, Master >=3.
-    constexpr RE::ActorValue kTechniqueChargesAV = RE::ActorValue::kVariable01;
-    // Technique Recovery enchantments add their percentage to Variable02.
-    constexpr RE::ActorValue kTechniqueRecoveryAV = RE::ActorValue::kVariable02;
-    constexpr RE::ActorValue kTechniqueRechargeProgressAV = RE::ActorValue::kVariable03;
-    constexpr RE::ActorValue kTechniqueMaxChargesAV = RE::ActorValue::kVariable04;
+    // OAR reads dedicated TESGlobal records instead of generic ActorValues so
+    // this system cannot collide with other mods that repurpose Variable01-10.
+    constexpr RE::FormID kTechniqueChargesGlobalLocalID = 0xE23;
+    constexpr RE::FormID kTechniqueMaxChargesGlobalLocalID = 0xE24;
+    constexpr RE::FormID kTechniqueRechargeProgressGlobalLocalID = 0xE25;
+    constexpr RE::FormID kTechniqueRecoveryGlobalLocalID = 0xE26;
+    constexpr RE::FormID kTechniqueRecoveryEffectLocalID = 0xE20;
+
+    // The existing rank signal spells apply these rank-specific effects.
+    // Payload Interpreter @CAST does not reliably emit TESSpellCastEvent, so
+    // charge spending is driven by the applied MGEF instead.
+    constexpr RE::FormID kAdeptChargeEffectLocalID = 0x804;
+    constexpr RE::FormID kExpertChargeEffectLocalID = 0x805;
+    constexpr RE::FormID kMasterChargeEffectLocalID = 0x806;
+
     constexpr float kBaseTechniqueRechargeSeconds = 30.0f;
     constexpr float kMaxTechniqueRecoveryPercent = 90.0f;
-
-    constexpr RE::FormID kAdeptChargeSignalSpellLocalID = 0x801;
-    constexpr RE::FormID kExpertChargeSignalSpellLocalID = 0x802;
-    constexpr RE::FormID kMasterChargeSignalSpellLocalID = 0x803;
 
     constexpr std::uint32_t FourCC(char a, char b, char c, char d)
     {
@@ -117,9 +122,14 @@ namespace
     RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
     RE::SpellItem* g_radiantCarianImpactSpell = nullptr;
 
-    RE::SpellItem* g_adeptChargeSignalSpell = nullptr;
-    RE::SpellItem* g_expertChargeSignalSpell = nullptr;
-    RE::SpellItem* g_masterChargeSignalSpell = nullptr;
+    RE::TESGlobal* g_techniqueChargesGlobal = nullptr;
+    RE::TESGlobal* g_techniqueMaxChargesGlobal = nullptr;
+    RE::TESGlobal* g_techniqueRechargeProgressGlobal = nullptr;
+    RE::TESGlobal* g_techniqueRecoveryGlobal = nullptr;
+    RE::EffectSetting* g_techniqueRecoveryEffect = nullptr;
+    RE::EffectSetting* g_adeptChargeEffect = nullptr;
+    RE::EffectSetting* g_expertChargeEffect = nullptr;
+    RE::EffectSetting* g_masterChargeEffect = nullptr;
 
     struct TechniqueChargeState
     {
@@ -1389,19 +1399,31 @@ namespace
 
     float GetTechniqueRecoveryPercent(RE::Actor* a_actor)
     {
-        if (!a_actor) {
+        if (!a_actor || !g_techniqueRecoveryEffect) {
             return 0.0f;
         }
 
-        auto* avOwner = a_actor->AsActorValueOwner();
-        if (!avOwner) {
+        auto* magicTarget = a_actor->AsMagicTarget();
+        auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
+        if (!effects) {
             return 0.0f;
         }
-        const float value = avOwner->GetActorValue(kTechniqueRecoveryAV);
-        if (!std::isfinite(value)) {
-            return 0.0f;
+
+        float bestMagnitude = 0.0f;
+        for (const auto* activeEffect : *effects) {
+            if (!activeEffect ||
+                activeEffect->flags.any(RE::ActiveEffect::Flag::kInactive, RE::ActiveEffect::Flag::kDispelled) ||
+                activeEffect->GetBaseObject() != g_techniqueRecoveryEffect) {
+                continue;
+            }
+
+            const float magnitude = activeEffect->GetMagnitude();
+            if (std::isfinite(magnitude)) {
+                bestMagnitude = std::max(bestMagnitude, magnitude);
+            }
         }
-        return std::clamp(value, 0.0f, kMaxTechniqueRecoveryPercent);
+
+        return std::clamp(bestMagnitude, 0.0f, kMaxTechniqueRecoveryPercent);
     }
 
     float GetTechniqueRechargeSeconds(RE::Actor* a_actor)
@@ -1410,7 +1432,7 @@ namespace
         return kBaseTechniqueRechargeSeconds * (1.0f - (recoveryPercent / 100.0f));
     }
 
-    void SyncTechniqueChargeActorValues(RE::Actor* a_actor)
+    void SyncTechniqueChargeGlobals(RE::Actor* a_actor)
     {
         if (!a_actor || !g_chargeState.initialized) {
             return;
@@ -1422,11 +1444,19 @@ namespace
             g_chargeState.currentCharges >= maxCharges ?
                 0.0f :
                 std::clamp(g_chargeState.rechargeProgressSeconds / rechargeSeconds, 0.0f, 1.0f);
+        const float recoveryPercent = GetTechniqueRecoveryPercent(a_actor);
 
-        if (auto* avOwner = a_actor->AsActorValueOwner()) {
-            avOwner->SetActorValue(kTechniqueChargesAV, static_cast<float>(g_chargeState.currentCharges));
-            avOwner->SetActorValue(kTechniqueRechargeProgressAV, normalizedProgress);
-            avOwner->SetActorValue(kTechniqueMaxChargesAV, static_cast<float>(maxCharges));
+        if (g_techniqueChargesGlobal) {
+            g_techniqueChargesGlobal->value = static_cast<float>(g_chargeState.currentCharges);
+        }
+        if (g_techniqueMaxChargesGlobal) {
+            g_techniqueMaxChargesGlobal->value = static_cast<float>(maxCharges);
+        }
+        if (g_techniqueRechargeProgressGlobal) {
+            g_techniqueRechargeProgressGlobal->value = normalizedProgress;
+        }
+        if (g_techniqueRecoveryGlobal) {
+            g_techniqueRecoveryGlobal->value = recoveryPercent;
         }
     }
 
@@ -1450,7 +1480,7 @@ namespace
             g_chargeClockPaused = false;
         }
 
-        SyncTechniqueChargeActorValues(a_actor);
+        SyncTechniqueChargeGlobals(a_actor);
         SKSE::log::info(
             "[CHARGE INIT] level={} current={}/{} recharge={:.2f}s recovery={:.1f}%",
             a_actor->GetLevel(),
@@ -1499,7 +1529,7 @@ namespace
         if (!g_chargeClockStarted) {
             g_chargeLastUpdate = a_now;
             g_chargeClockStarted = true;
-            SyncTechniqueChargeActorValues(a_actor);
+            SyncTechniqueChargeGlobals(a_actor);
             return;
         }
 
@@ -1542,7 +1572,7 @@ namespace
             g_chargeState.rechargeProgressSeconds = 0.0f;
         }
 
-        SyncTechniqueChargeActorValues(a_actor);
+        SyncTechniqueChargeGlobals(a_actor);
     }
 
     void UpdateTechniqueChargeState(RE::Actor* a_actor)
@@ -1601,7 +1631,7 @@ namespace
         g_lastChargeSignalSpell = a_signalSpell;
         g_lastChargeSignalTime = now;
 
-        SyncTechniqueChargeActorValues(a_actor);
+        SyncTechniqueChargeGlobals(a_actor);
         SKSE::log::info(
             "[CHARGE SPEND] cost={} current={}/{} recharge={:.2f}s recovery={:.1f}% signal={:08X}",
             a_cost,
@@ -1613,18 +1643,18 @@ namespace
         return true;
     }
 
-    bool HandleTechniqueChargeSignal(RE::Actor* a_actor, RE::FormID a_spellFormID)
+    bool HandleTechniqueChargeEffect(RE::Actor* a_actor, RE::FormID a_effectFormID)
     {
-        if (g_adeptChargeSignalSpell && a_spellFormID == g_adeptChargeSignalSpell->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 1, a_spellFormID);
+        if (g_adeptChargeEffect && a_effectFormID == g_adeptChargeEffect->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 1, a_effectFormID);
             return true;
         }
-        if (g_expertChargeSignalSpell && a_spellFormID == g_expertChargeSignalSpell->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 2, a_spellFormID);
+        if (g_expertChargeEffect && a_effectFormID == g_expertChargeEffect->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 2, a_effectFormID);
             return true;
         }
-        if (g_masterChargeSignalSpell && a_spellFormID == g_masterChargeSignalSpell->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 3, a_spellFormID);
+        if (g_masterChargeEffect && a_effectFormID == g_masterChargeEffect->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 3, a_effectFormID);
             return true;
         }
         return false;
@@ -1673,7 +1703,7 @@ namespace
                 }
                 g_chargeLastUpdate = now;
                 g_chargeClockStarted = true;
-                SyncTechniqueChargeActorValues(player);
+                SyncTechniqueChargeGlobals(player);
             }
 
             return RE::BSEventNotifyControl::kContinue;
@@ -1802,10 +1832,6 @@ namespace
                 return RE::BSEventNotifyControl::kContinue;
             }
 
-            if (HandleTechniqueChargeSignal(player, a_event->spell)) {
-                return RE::BSEventNotifyControl::kContinue;
-            }
-
             const auto* def = GetEquippedMagicStone(player);
             if (!def) {
                 return RE::BSEventNotifyControl::kContinue;
@@ -1886,6 +1912,10 @@ namespace
 
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (target->IsPlayerRef() && HandleTechniqueChargeEffect(player, a_event->magicEffect)) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -2210,12 +2240,23 @@ namespace
             }
         }
 
-        g_adeptChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
-            kAdeptChargeSignalSpellLocalID, kCooldownPlugin);
-        g_expertChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
-            kExpertChargeSignalSpellLocalID, kCooldownPlugin);
-        g_masterChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
-            kMasterChargeSignalSpellLocalID, kCooldownPlugin);
+        g_techniqueChargesGlobal = dataHandler->LookupForm<RE::TESGlobal>(
+            kTechniqueChargesGlobalLocalID, kStonePlugin);
+        g_techniqueMaxChargesGlobal = dataHandler->LookupForm<RE::TESGlobal>(
+            kTechniqueMaxChargesGlobalLocalID, kStonePlugin);
+        g_techniqueRechargeProgressGlobal = dataHandler->LookupForm<RE::TESGlobal>(
+            kTechniqueRechargeProgressGlobalLocalID, kStonePlugin);
+        g_techniqueRecoveryGlobal = dataHandler->LookupForm<RE::TESGlobal>(
+            kTechniqueRecoveryGlobalLocalID, kStonePlugin);
+        g_techniqueRecoveryEffect = dataHandler->LookupForm<RE::EffectSetting>(
+            kTechniqueRecoveryEffectLocalID, kStonePlugin);
+
+        g_adeptChargeEffect = dataHandler->LookupForm<RE::EffectSetting>(
+            kAdeptChargeEffectLocalID, kCooldownPlugin);
+        g_expertChargeEffect = dataHandler->LookupForm<RE::EffectSetting>(
+            kExpertChargeEffectLocalID, kCooldownPlugin);
+        g_masterChargeEffect = dataHandler->LookupForm<RE::EffectSetting>(
+            kMasterChargeEffectLocalID, kCooldownPlugin);
 
         g_tier1AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kOakfleshLocalID, kSkyrimPlugin);
         g_tier2AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kStonefleshLocalID, kSkyrimPlugin);
@@ -2276,10 +2317,17 @@ namespace
         SKSE::log::info("Resolved {}/{} Magic/Rune Technique Stones", magicResolved, kMagicTechniqueDefinitions.size());
         SKSE::log::info("Resolved {}/{} Magic activation signals", activationResolved, kMagicActivationSignals.size());
         SKSE::log::info(
-            "Technique Charge signals: Adept={} Expert={} Master={}",
-            g_adeptChargeSignalSpell ? "OK" : "MISSING",
-            g_expertChargeSignalSpell ? "OK" : "MISSING",
-            g_masterChargeSignalSpell ? "OK" : "MISSING");
+            "Technique Charge globals: current={} max={} progress={} recovery={} effect={}",
+            g_techniqueChargesGlobal ? "OK" : "MISSING",
+            g_techniqueMaxChargesGlobal ? "OK" : "MISSING",
+            g_techniqueRechargeProgressGlobal ? "OK" : "MISSING",
+            g_techniqueRecoveryGlobal ? "OK" : "MISSING",
+            g_techniqueRecoveryEffect ? "OK" : "MISSING");
+        SKSE::log::info(
+            "Technique Charge rank effects: Adept={} Expert={} Master={}",
+            g_adeptChargeEffect ? "OK" : "MISSING",
+            g_expertChargeEffect ? "OK" : "MISSING",
+            g_masterChargeEffect ? "OK" : "MISSING");
 
         SKSE::log::info(
             "Alteration probes: T1={} T2={} T3={}",
@@ -2445,6 +2493,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.1 Technique Charges startup-safety hotfix loaded");
+    SKSE::log::info("HE Technique Damage v0.6.2 Technique Charges global-state hotfix loaded");
     return true;
 }
