@@ -279,7 +279,7 @@ namespace
             return;
         }
 
-        const float stamina = a_actor->GetActorValue(RE::ActorValue::kStamina);
+        const float stamina = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina);
         if (!std::isfinite(stamina)) {
             g_physicalStaminaRefundArmed = false;
             return;
@@ -316,14 +316,14 @@ namespace
                     return;
                 }
 
-                const float current = player->GetActorValue(RE::ActorValue::kStamina);
+                const float current = player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina);
                 if (!std::isfinite(current) || !std::isfinite(snapshot)) {
                     return;
                 }
 
                 const float refund = snapshot - current;
                 if (refund > 0.01f && refund <= kMaxPhysicalTechniqueStaminaRefund) {
-                    player->AsActorValueOwner()->RestoreActorValue(RE::ActorValue::kStamina, refund);
+                    player->AsActorValueOwner()->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina, refund);
                     SKSE::log::info(
                         "[STONE STAMINA REFUND] before={:.2f} snapshot={:.2f} refunded={:.2f}",
                         current,
