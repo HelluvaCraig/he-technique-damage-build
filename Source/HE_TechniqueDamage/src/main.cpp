@@ -1354,9 +1354,24 @@ namespace
     }
 
 
+    bool IsTechniqueChargePlayerReady(RE::Actor* a_actor)
+    {
+        // Input events begin firing before a loaded/new game has placed the
+        // PlayerCharacter into a cell. Calling Actor::GetLevel() during that
+        // startup window can dereference uninitialized player state.
+        return a_actor &&
+               a_actor->IsPlayerRef() &&
+               a_actor->GetParentCell() != nullptr;
+    }
+
     std::uint32_t GetTechniqueMaxCharges(RE::Actor* a_actor)
     {
-        const auto level = a_actor ? a_actor->GetLevel() : 1;
+        if (!IsTechniqueChargePlayerReady(a_actor)) {
+            return g_chargeState.previousMaxCharges > 0 ?
+                g_chargeState.previousMaxCharges : 1u;
+        }
+
+        const auto level = a_actor->GetLevel();
         if (level >= 50) {
             return 5;
         }
@@ -1417,7 +1432,7 @@ namespace
 
     void InitializeTechniqueChargeState(RE::Actor* a_actor)
     {
-        if (!a_actor) {
+        if (!IsTechniqueChargePlayerReady(a_actor)) {
             return;
         }
 
@@ -1532,7 +1547,7 @@ namespace
 
     void UpdateTechniqueChargeState(RE::Actor* a_actor)
     {
-        if (!a_actor) {
+        if (!IsTechniqueChargePlayerReady(a_actor)) {
             return;
         }
 
@@ -1627,6 +1642,8 @@ namespace
             }
 
             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                // Safe during title/loading screens: Update exits until the
+                // player has a valid parent cell.
                 UpdateTechniqueChargeState(player);
             }
             return RE::BSEventNotifyControl::kContinue;
@@ -2428,6 +2445,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.0 shared Technique Charges loaded");
+    SKSE::log::info("HE Technique Damage v0.6.1 Technique Charges startup-safety hotfix loaded");
     return true;
 }
