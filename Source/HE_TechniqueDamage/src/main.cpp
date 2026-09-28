@@ -498,7 +498,9 @@ namespace
     {
         a_maxMagicka = 100.0f;
         if (a_actor) {
-            a_maxMagicka = std::max(0.0f, a_actor->GetActorValueMax(RE::ActorValue::kMagicka));
+            if (auto* avOwner = a_actor->AsActorValueOwner()) {
+                a_maxMagicka = std::max(0.0f, avOwner->GetPermanentActorValue(RE::ActorValue::kMagicka));
+            }
         }
 
         // Keep the already-balanced magic curve almost unchanged:
@@ -1376,7 +1378,11 @@ namespace
             return 0.0f;
         }
 
-        const float value = a_actor->GetActorValue(kTechniqueRecoveryAV);
+        auto* avOwner = a_actor->AsActorValueOwner();
+        if (!avOwner) {
+            return 0.0f;
+        }
+        const float value = avOwner->GetActorValue(kTechniqueRecoveryAV);
         if (!std::isfinite(value)) {
             return 0.0f;
         }
@@ -1402,9 +1408,11 @@ namespace
                 0.0f :
                 std::clamp(g_chargeState.rechargeProgressSeconds / rechargeSeconds, 0.0f, 1.0f);
 
-        a_actor->SetActorValue(kTechniqueChargesAV, static_cast<float>(g_chargeState.currentCharges));
-        a_actor->SetActorValue(kTechniqueRechargeProgressAV, normalizedProgress);
-        a_actor->SetActorValue(kTechniqueMaxChargesAV, static_cast<float>(maxCharges));
+        if (auto* avOwner = a_actor->AsActorValueOwner()) {
+            avOwner->SetActorValue(kTechniqueChargesAV, static_cast<float>(g_chargeState.currentCharges));
+            avOwner->SetActorValue(kTechniqueRechargeProgressAV, normalizedProgress);
+            avOwner->SetActorValue(kTechniqueMaxChargesAV, static_cast<float>(maxCharges));
+        }
     }
 
     void InitializeTechniqueChargeState(RE::Actor* a_actor)
