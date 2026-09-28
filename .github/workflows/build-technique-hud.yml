@@ -69,5 +69,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HelluvaHUD-v0.1.0-combat-visibility
+          name: HelluvaHUD-v0.2.0-core-stats
           path: artifact
