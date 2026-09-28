@@ -11,8 +11,12 @@ html,body{
 #widget{
   position:fixed;left:var(--left);bottom:var(--bottom);
   width:240px;height:10px;transform-origin:left bottom;
-  opacity:.98;filter:drop-shadow(0 1px 1px rgba(0,0,0,.72));z-index:10;
+  opacity:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.72));z-index:10;
+  transition:opacity .28s cubic-bezier(.22,.61,.36,1);
+  will-change:opacity;
 }
+#widget.visible{opacity:.98}
+#widget.instant{transition:none!important}
 #charges{display:flex;width:240px;height:10px;gap:0}
 .charge{position:relative;width:48px;height:10px;flex:0 0 48px;overflow:visible}
 .charge img{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
@@ -130,8 +134,20 @@ html,body{
     lastMax=max;
   }
 
-  window.TechniqueHUD={
+  function setVisible(visible,instant=false){
+    if(instant){
+      widget.classList.add("instant");
+      widget.classList.toggle("visible",!!visible);
+      widget.offsetWidth;
+      requestAnimationFrame(()=>widget.classList.remove("instant"));
+      return;
+    }
+    widget.classList.toggle("visible",!!visible);
+  }
+
+  window.HelluvaHUD={
     setLayout,
+    setVisible,
     setState(state){render(state||{})}
   };
 
