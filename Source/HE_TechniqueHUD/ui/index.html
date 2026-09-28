@@ -7,45 +7,232 @@ html,body{
   width:100%;height:100%;margin:0;overflow:hidden;
   background:transparent;pointer-events:none;
 }
-:root{--left:22px;--bottom:112px}
+:root{--left:574px;--bottom:32px}
+*{box-sizing:border-box}
+
 #widget{
-  position:fixed;left:var(--left);bottom:var(--bottom);
-  width:240px;height:10px;transform-origin:left bottom;
-  opacity:0;filter:drop-shadow(0 1px 1px rgba(0,0,0,.72));z-index:10;
+  position:fixed;
+  left:var(--left);
+  bottom:var(--bottom);
+  width:772px;
+  height:68px;
+  transform-origin:left bottom;
+  opacity:0;
+  z-index:10;
   transition:opacity .28s cubic-bezier(.22,.61,.36,1);
   will-change:opacity;
 }
-#widget.visible{opacity:.98}
+#widget.visible{opacity:1}
 #widget.instant{transition:none!important}
-#charges{display:flex;width:240px;height:10px;gap:0}
-.charge{position:relative;width:48px;height:10px;flex:0 0 48px;overflow:visible}
-.charge img{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.empty,.locked{position:absolute;inset:0;width:48px;height:10px}
-.fillClip{
-  position:absolute;left:2px;top:1px;width:0;height:8px;
-  overflow:hidden;border-radius:8px;pointer-events:none;
-  transition:width .085s linear,filter .16s ease;
+
+.statsText{
+  font-family:"El Messiri","Times New Roman",serif;
+  font-weight:700;
+  line-height:1.3;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
 }
-.fill{position:absolute;left:0;top:0;width:44px;height:8px;max-width:none}
+.currentValue{
+  font-size:20px;
+  letter-spacing:1.8px;
+  color:#e2d6c0;
+}
+.maxValue{
+  font-size:16px;
+  letter-spacing:1.44px;
+  color:#988d7a;
+}
+.separator{
+  width:4px;height:4px;flex:0 0 4px;
+  object-fit:contain;
+}
+.statIcon{
+  width:22px;height:22px;flex:0 0 22px;
+  object-fit:contain;
+}
+.statNumbers{
+  height:22px;
+  display:flex;
+  gap:4px;
+  align-items:center;
+}
+#healthNumbers{
+  position:absolute;
+  left:190px;top:0;
+  width:146px;height:22px;
+  justify-content:flex-end;
+}
+#magickaNumbers{
+  position:absolute;
+  left:436px;top:0;
+  width:129px;height:22px;
+  justify-content:flex-start;
+}
+
+.resourceBar{
+  position:absolute;
+  width:336px;height:30px;
+}
+#healthBar{left:0;top:26px}
+#magickaBar{left:436px;top:26px}
+.resourceBar img{
+  position:absolute;inset:0;
+  width:336px;height:30px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+.resourceFill{
+  transition:clip-path .09s linear;
+  will-change:clip-path;
+}
+#healthFill{clip-path:inset(0 0 0 0)}
+#magickaFill{clip-path:inset(0 0 0 0)}
+
+#staminaBar{
+  position:absolute;
+  left:6px;top:57px;
+  width:323px;height:11px;
+}
+#staminaBar img{
+  position:absolute;inset:0;
+  width:323px;height:11px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#staminaFill{
+  transition:clip-path .09s linear;
+  clip-path:inset(0 0 0 0);
+  will-change:clip-path;
+}
+
+#levelBadge{
+  position:absolute;
+  left:355px;top:4px;
+  width:62px;height:60px;
+}
+#levelEmpty,#levelFill{
+  position:absolute;
+  left:12.31px;top:0;
+  width:37.37px;height:60px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#levelFill{
+  clip-path:inset(100% 0 0 0);
+  transition:clip-path .12s linear;
+  will-change:clip-path;
+}
+#levelPaper{
+  position:absolute;inset:0;
+  width:62px;height:60px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#levelNumber{
+  position:absolute;
+  left:50%;top:50%;
+  transform:translate(-50%,-52%);
+  width:40px;
+  text-align:center;
+  font-family:"El Messiri","Times New Roman",serif;
+  font-weight:700;
+  font-size:20px;
+  line-height:1.4;
+  letter-spacing:0;
+  color:#4a4335;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+#charges{
+  position:absolute;
+  left:442px;top:58px;
+  display:flex;
+  width:240px;height:10px;
+  gap:0;
+}
+.charge{
+  position:relative;
+  width:48px;height:10px;
+  flex:0 0 48px;
+  overflow:hidden;
+}
+.charge img{
+  position:absolute;inset:0;
+  width:48px;height:10px;
+  display:block;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
 .charge .locked{opacity:1}
 .charge .empty{opacity:0}
+.charge .fill{
+  opacity:0;
+  clip-path:inset(0 100% 0 0);
+  transition:clip-path .085s linear,opacity .12s ease,filter .16s ease;
+}
 .charge.unlocked .locked{opacity:0}
 .charge.unlocked .empty{opacity:1}
-.charge:not(.unlocked) .fillClip{width:0!important;filter:none}
-.charge.available .fillClip{filter:drop-shadow(0 0 2px rgba(214,176,86,.42))}
-.charge.recharging .fillClip{filter:drop-shadow(0 0 2px rgba(214,176,86,.32))}
-.charge.unlocking .fillClip{
-  transition:width .7s cubic-bezier(.16,.78,.24,1),filter .7s ease;
+.charge.available .fill{opacity:1;clip-path:inset(0 0 0 0);filter:drop-shadow(0 0 2px rgba(214,176,86,.42))}
+.charge.recharging .fill{opacity:1;filter:drop-shadow(0 0 2px rgba(214,176,86,.32))}
+.charge.unlocking .fill{
+  transition:clip-path .7s cubic-bezier(.16,.78,.24,1),opacity .12s ease,filter .7s ease;
   filter:drop-shadow(0 0 4px rgba(229,192,101,.78));
 }
 </style>
 </head>
 <body>
-<div id="widget" aria-label="Technique Charges"><div id="charges"></div></div>
+<div id="widget" aria-label="HelluvaHUD Core Stats">
+  <div id="healthNumbers" class="statNumbers">
+    <span id="healthMax" class="statsText maxValue">100</span>
+    <img class="separator" src="assets/separator.png" alt="">
+    <span id="healthCurrent" class="statsText currentValue">100</span>
+    <img class="statIcon" src="assets/health_icon.png" alt="">
+  </div>
+
+  <div id="healthBar" class="resourceBar">
+    <img src="assets/hp_mp_bg.png" alt="">
+    <img id="healthFill" class="resourceFill" src="assets/hp_fill.png" alt="">
+  </div>
+
+  <div id="levelBadge">
+    <img id="levelEmpty" src="assets/lvl_empty.png" alt="">
+    <img id="levelFill" src="assets/lvl_fill.png" alt="">
+    <img id="levelPaper" src="assets/lvl_bg.png" alt="">
+    <div id="levelNumber">1</div>
+  </div>
+
+  <div id="magickaNumbers" class="statNumbers">
+    <img class="statIcon" src="assets/magicka_icon.png" alt="">
+    <span id="magickaCurrent" class="statsText currentValue">100</span>
+    <img class="separator" src="assets/separator.png" alt="">
+    <span id="magickaMax" class="statsText maxValue">100</span>
+  </div>
+
+  <div id="magickaBar" class="resourceBar">
+    <img src="assets/hp_mp_bg.png" alt="">
+    <img id="magickaFill" class="resourceFill" src="assets/mp_fill.png" alt="">
+  </div>
+
+  <div id="staminaBar">
+    <img src="assets/stamina_bg.png" alt="">
+    <img id="staminaFill" src="assets/stamina_fill.png" alt="">
+  </div>
+
+  <div id="charges"></div>
+</div>
+
 <script>
 (()=>{
-  const EMPTY="data:image/png;base64,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", LOCKED="data:image/png;base64,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", FILL="data:image/png;base64,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";
   const widget=document.getElementById("widget");
+  const healthFill=document.getElementById("healthFill");
+  const magickaFill=document.getElementById("magickaFill");
+  const staminaFill=document.getElementById("staminaFill");
+  const levelFill=document.getElementById("levelFill");
+  const levelNumber=document.getElementById("levelNumber");
+  const healthCurrent=document.getElementById("healthCurrent");
+  const healthMax=document.getElementById("healthMax");
+  const magickaCurrent=document.getElementById("magickaCurrent");
+  const magickaMax=document.getElementById("magickaMax");
   const chargesRoot=document.getElementById("charges");
   const chargeNodes=[];
   let lastMax=null;
@@ -54,19 +241,12 @@ html,body{
     const n=Number(v);
     return Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):lo;
   }
-
-  function setFill(n,v,instant=false){
-    const p=clamp(v,0,1);
-    const width=(44*p).toFixed(2)+"px";
-    if(instant){
-      const t=n.fillClip.style.transition;
-      n.fillClip.style.transition="none";
-      n.fillClip.style.width=width;
-      n.fillClip.offsetWidth;
-      n.fillClip.style.transition=t;
-    }else{
-      n.fillClip.style.width=width;
-    }
+  function pct(current,max){
+    return max>0?clamp(current/max,0,1):0;
+  }
+  function intText(v){
+    const n=Number(v);
+    return Number.isFinite(n)?String(Math.max(0,Math.round(n))):"0";
   }
 
   function makeCharge(i){
@@ -76,62 +256,26 @@ html,body{
 
     const locked=document.createElement("img");
     locked.className="locked";
-    locked.src=LOCKED;
+    locked.src="assets/charge_locked.png";
 
     const empty=document.createElement("img");
     empty.className="empty";
-    empty.src=EMPTY;
+    empty.src="assets/charge_empty.png";
 
-    const fillClip=document.createElement("div");
-    fillClip.className="fillClip";
     const fill=document.createElement("img");
     fill.className="fill";
-    fill.src=FILL;
-    fillClip.appendChild(fill);
+    fill.src="assets/charge_fill.png";
 
-    root.append(locked,empty,fillClip);
+    root.append(locked,empty,fill);
     chargesRoot.appendChild(root);
-    return {root,fillClip};
+    return {root,fill};
   }
-
   for(let i=0;i<5;i++) chargeNodes.push(makeCharge(i));
 
   function setLayout(left,bottom,scale){
     document.documentElement.style.setProperty("--left",clamp(left,0,4000)+"px");
     document.documentElement.style.setProperty("--bottom",clamp(bottom,0,4000)+"px");
     widget.style.transform="scale("+(clamp(scale,50,250)/100)+")";
-  }
-
-  function render(state){
-    const current=Math.max(0,Math.min(5,Math.round(Number(state&&state.current)||0)));
-    const max=Math.max(0,Math.min(5,Math.round(Number(state&&state.max)||0)));
-    const progress=clamp(state&&state.progress||0,0,1);
-    const previous=lastMax;
-    const increased=previous!==null&&max>previous;
-
-    chargeNodes.forEach((n,i)=>{
-      const unlocked=i<max;
-      const available=unlocked&&i<current;
-      const recharging=unlocked&&i===current&&current<max;
-
-      n.root.classList.toggle("unlocked",unlocked);
-      n.root.classList.toggle("available",available);
-      n.root.classList.toggle("recharging",recharging);
-
-      const amount=available?1:(recharging?progress:0);
-      const newly=increased&&i>=previous&&i<max;
-
-      if(newly){
-        n.root.classList.add("unlocking");
-        setFill(n,0,true);
-        requestAnimationFrame(()=>requestAnimationFrame(()=>setFill(n,amount)));
-        setTimeout(()=>n.root.classList.remove("unlocking"),850);
-      }else{
-        setFill(n,amount);
-      }
-    });
-
-    lastMax=max;
   }
 
   function setVisible(visible,instant=false){
@@ -145,13 +289,87 @@ html,body{
     widget.classList.toggle("visible",!!visible);
   }
 
+  function setChargeFill(node,amount,instant=false){
+    const p=clamp(amount,0,1);
+    const clip="inset(0 "+((1-p)*100).toFixed(2)+"% 0 0)";
+    if(instant){
+      const old=node.fill.style.transition;
+      node.fill.style.transition="none";
+      node.fill.style.clipPath=clip;
+      node.fill.offsetWidth;
+      node.fill.style.transition=old;
+    }else{
+      node.fill.style.clipPath=clip;
+    }
+  }
+
+  function renderCharges(state){
+    const current=Math.max(0,Math.min(5,Math.round(Number(state.chargesCurrent)||0)));
+    const max=Math.max(0,Math.min(5,Math.round(Number(state.chargesMax)||0)));
+    const progress=clamp(state.chargeProgress||0,0,1);
+    const previous=lastMax;
+    const increased=previous!==null&&max>previous;
+
+    chargeNodes.forEach((n,i)=>{
+      const unlocked=i<max;
+      const available=unlocked&&i<current;
+      const recharging=unlocked&&i===current&&current<max;
+      n.root.classList.toggle("unlocked",unlocked);
+      n.root.classList.toggle("available",available);
+      n.root.classList.toggle("recharging",recharging);
+
+      const amount=available?1:(recharging?progress:0);
+      const newly=increased&&i>=previous&&i<max;
+      if(newly){
+        n.root.classList.add("unlocking");
+        setChargeFill(n,0,true);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>setChargeFill(n,amount)));
+        setTimeout(()=>n.root.classList.remove("unlocking"),850);
+      }else{
+        setChargeFill(n,amount);
+      }
+    });
+    lastMax=max;
+  }
+
+  function render(state){
+    state=state||{};
+
+    const hp=pct(Number(state.healthCurrent)||0,Number(state.healthMax)||1);
+    const mp=pct(Number(state.magickaCurrent)||0,Number(state.magickaMax)||1);
+    const sp=pct(Number(state.staminaCurrent)||0,Number(state.staminaMax)||1);
+
+    // Figma mirrors the two primary resource bars toward the centre:
+    // Health stays anchored to the right edge; Magicka to the left edge.
+    healthFill.style.clipPath="inset(0 0 0 "+((1-hp)*100).toFixed(2)+"%)";
+    magickaFill.style.clipPath="inset(0 "+((1-mp)*100).toFixed(2)+"% 0 0)";
+    staminaFill.style.clipPath="inset(0 "+((1-sp)*100).toFixed(2)+"% 0 0)";
+
+    healthCurrent.textContent=intText(state.healthCurrent);
+    healthMax.textContent=intText(state.healthMax);
+    magickaCurrent.textContent=intText(state.magickaCurrent);
+    magickaMax.textContent=intText(state.magickaMax);
+
+    const xp=clamp(state.xpProgress||0,0,1);
+    levelFill.style.clipPath="inset("+((1-xp)*100).toFixed(2)+"% 0 0 0)";
+    levelNumber.textContent=intText(state.level||1);
+
+    renderCharges(state);
+  }
+
   window.HelluvaHUD={
     setLayout,
     setVisible,
-    setState(state){render(state||{})}
+    setState:render
   };
 
-  render({current:0,max:0,progress:0,recovery:0});
+  render({
+    healthCurrent:100,healthMax:100,
+    magickaCurrent:100,magickaMax:100,
+    staminaCurrent:100,staminaMax:100,
+    level:1,xpProgress:0,
+    chargesCurrent:0,chargesMax:0,chargeProgress:0
+  });
 })();
 </script>
 </body>
