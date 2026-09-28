@@ -1,31 +1,29 @@
 #include "pch.h"
 #include "PrismaUI_API.h"
-#include "StoneMap.h"
 
 using namespace std::chrono_literals;
 
 namespace
 {
     constexpr auto kStonePlugin = "HE Elden Rim - Ash Rings.esp";
-    constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
-    constexpr auto kNewArmouryPlugin = "NewArmoury.esp";
-    constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr auto kViewPath = "HE_TechniqueHUD/index.html";
     constexpr auto kDefaultIniRelativePath = "Data\\SKSE\\Plugins\\HE_TechniqueHUD.ini";
     constexpr auto kUserIniRelativePath = "Data\\SKSE\\Plugins\\HE_TechniqueHUD.user.ini";
 
-    inline constexpr std::array<RE::FormID, 3> kCooldownMGEFLocalIDs = { 0x804, 0x805, 0x806 };
-    inline constexpr std::array<RE::FormID, 3> kAlterationProbeLocalIDs = { 0x5AD5C, 0x5AD5D, 0x51B16 };
+    constexpr RE::FormID kTechniqueChargesGlobalLocalID = 0xE23;
+    constexpr RE::FormID kTechniqueMaxChargesGlobalLocalID = 0xE24;
+    constexpr RE::FormID kTechniqueRechargeProgressGlobalLocalID = 0xE25;
+    constexpr RE::FormID kTechniqueRecoveryGlobalLocalID = 0xE26;
 
     PRISMA_UI_API::IVPrismaUI1* g_prisma = nullptr;
     PrismaView g_view = 0;
     std::atomic_bool g_domReady{ false };
     std::jthread g_pollThread;
 
-    std::array<RE::EffectSetting*, 3> g_cooldownMGEFs{};
-    std::array<RE::SpellItem*, 3> g_alterationProbes{};
-    std::unordered_map<RE::FormID, const StoneDefinition*> g_definitionByFullFormID;
-    std::array<RE::BGSKeyword*, 3> g_colossusKeywords{};
+    RE::TESGlobal* g_currentCharges = nullptr;
+    RE::TESGlobal* g_maxCharges = nullptr;
+    RE::TESGlobal* g_rechargeProgress = nullptr;
+    RE::TESGlobal* g_recoveryPercent = nullptr;
 
     std::filesystem::path g_defaultIniPath;
     std::filesystem::path g_userIniPath;
@@ -36,21 +34,21 @@ namespace
     {
         int left = 22;
         int bottom = 112;
-        int size = 72;
+        int scale = 100;
         int pollMs = 50;
         int menuKey = 68;
     } g_config;
 
     struct HUDState
     {
-        std::uint8_t equippedTier = 0;
-        std::array<float, 3> progress{ 1.0f, 1.0f, 1.0f };
+        float current = 0.0f;
+        float max = 0.0f;
+        float progress = 0.0f;
+        float recovery = 0.0f;
     };
 
     HUDState g_lastState{};
     bool g_hasLastState = false;
-    const StoneDefinition* g_cachedDefinition = nullptr;
-    std::chrono::steady_clock::time_point g_nextStoneScan{};
     bool g_settingsOpen = false;
     bool g_inputRegistered = false;
 
@@ -82,23 +80,23 @@ namespace
 
         g_config.left = static_cast<int>(GetPrivateProfileIntA("HUD", "Left", g_config.left, g_defaultIniPathString.c_str()));
         g_config.bottom = static_cast<int>(GetPrivateProfileIntA("HUD", "Bottom", g_config.bottom, g_defaultIniPathString.c_str()));
-        g_config.size = static_cast<int>(GetPrivateProfileIntA("HUD", "Size", g_config.size, g_defaultIniPathString.c_str()));
+        g_config.scale = static_cast<int>(GetPrivateProfileIntA("HUD", "Scale", g_config.scale, g_defaultIniPathString.c_str()));
         g_config.pollMs = static_cast<int>(GetPrivateProfileIntA("HUD", "PollMs", g_config.pollMs, g_defaultIniPathString.c_str()));
         g_config.menuKey = static_cast<int>(GetPrivateProfileIntA("HUD", "MenuKey", g_config.menuKey, g_defaultIniPathString.c_str()));
 
         g_config.left = static_cast<int>(GetPrivateProfileIntA("HUD", "Left", g_config.left, g_userIniPathString.c_str()));
         g_config.bottom = static_cast<int>(GetPrivateProfileIntA("HUD", "Bottom", g_config.bottom, g_userIniPathString.c_str()));
-        g_config.size = static_cast<int>(GetPrivateProfileIntA("HUD", "Size", g_config.size, g_userIniPathString.c_str()));
+        g_config.scale = static_cast<int>(GetPrivateProfileIntA("HUD", "Scale", g_config.scale, g_userIniPathString.c_str()));
         g_config.pollMs = static_cast<int>(GetPrivateProfileIntA("HUD", "PollMs", g_config.pollMs, g_userIniPathString.c_str()));
         g_config.menuKey = static_cast<int>(GetPrivateProfileIntA("HUD", "MenuKey", g_config.menuKey, g_userIniPathString.c_str()));
 
         g_config.left = std::clamp(g_config.left, 0, 4000);
         g_config.bottom = std::clamp(g_config.bottom, 0, 4000);
-        g_config.size = std::clamp(g_config.size, 40, 200);
+        g_config.scale = std::clamp(g_config.scale, 50, 250);
         g_config.pollMs = std::clamp(g_config.pollMs, 33, 250);
         g_config.menuKey = std::clamp(g_config.menuKey, 0, 255);
 
-        SKSE::log::info("Loaded HUD layout Left={} Bottom={} Size={}", g_config.left, g_config.bottom, g_config.size);
+        SKSE::log::info("Loaded charge HUD layout Left={} Bottom={} Scale={}%", g_config.left, g_config.bottom, g_config.scale);
     }
 
     void SaveLayoutConfig()
@@ -114,26 +112,12 @@ namespace
 
         const auto left = std::to_string(g_config.left);
         const auto bottom = std::to_string(g_config.bottom);
-        const auto size = std::to_string(g_config.size);
+        const auto scale = std::to_string(g_config.scale);
 
         WritePrivateProfileStringA("HUD", "Left", left.c_str(), g_userIniPathString.c_str());
         WritePrivateProfileStringA("HUD", "Bottom", bottom.c_str(), g_userIniPathString.c_str());
-        WritePrivateProfileStringA("HUD", "Size", size.c_str(), g_userIniPathString.c_str());
+        WritePrivateProfileStringA("HUD", "Scale", scale.c_str(), g_userIniPathString.c_str());
         WritePrivateProfileStringA(nullptr, nullptr, nullptr, g_userIniPathString.c_str());
-    }
-
-    std::uint8_t GetTechniqueTier(const StoneDefinition& a_def)
-    {
-        if (a_def.category == Category::None || a_def.resourceCost <= 0.0f) {
-            return 0;
-        }
-        if (a_def.resourceCost < 55.0f) {
-            return 1;
-        }
-        if (a_def.resourceCost < 90.0f) {
-            return 2;
-        }
-        return 3;
     }
 
     void ResolveForms()
@@ -144,233 +128,17 @@ namespace
             return;
         }
 
-        g_definitionByFullFormID.clear();
-        std::size_t stonesResolved = 0;
-        for (const auto& def : kStoneDefinitions) {
-            if (def.category == Category::None) {
-                continue;
-            }
-            if (auto* stone = dataHandler->LookupForm<RE::TESObjectARMO>(def.localFormID, kStonePlugin)) {
-                g_definitionByFullFormID.emplace(stone->GetFormID(), std::addressof(def));
-                ++stonesResolved;
-            }
-        }
+        g_currentCharges = dataHandler->LookupForm<RE::TESGlobal>(kTechniqueChargesGlobalLocalID, kStonePlugin);
+        g_maxCharges = dataHandler->LookupForm<RE::TESGlobal>(kTechniqueMaxChargesGlobalLocalID, kStonePlugin);
+        g_rechargeProgress = dataHandler->LookupForm<RE::TESGlobal>(kTechniqueRechargeProgressGlobalLocalID, kStonePlugin);
+        g_recoveryPercent = dataHandler->LookupForm<RE::TESGlobal>(kTechniqueRecoveryGlobalLocalID, kStonePlugin);
 
-        std::size_t cooldownResolved = 0;
-        for (std::size_t i = 0; i < kCooldownMGEFLocalIDs.size(); ++i) {
-            g_cooldownMGEFs[i] = dataHandler->LookupForm<RE::EffectSetting>(kCooldownMGEFLocalIDs[i], kCooldownPlugin);
-            if (g_cooldownMGEFs[i]) {
-                g_cooldownMGEFs[i]->data.flags.set(RE::EffectSetting::EffectSettingData::Flag::kHideInUI);
-                ++cooldownResolved;
-            }
-        }
-
-        std::size_t probeResolved = 0;
-        for (std::size_t i = 0; i < kAlterationProbeLocalIDs.size(); ++i) {
-            g_alterationProbes[i] = dataHandler->LookupForm<RE::SpellItem>(kAlterationProbeLocalIDs[i], kSkyrimPlugin);
-            if (g_alterationProbes[i]) {
-                ++probeResolved;
-            }
-        }
-
-        g_colossusKeywords[0] = dataHandler->LookupForm<RE::BGSKeyword>(0xE457E, kNewArmouryPlugin);
-        g_colossusKeywords[1] = dataHandler->LookupForm<RE::BGSKeyword>(0xE457F, kNewArmouryPlugin);
-        g_colossusKeywords[2] = dataHandler->LookupForm<RE::BGSKeyword>(0xE4580, kNewArmouryPlugin);
-
-        SKSE::log::info("Resolved {}/77 active Stones, {}/3 cooldown blockers, {}/3 Alteration probes",
-            stonesResolved, cooldownResolved, probeResolved);
-    }
-
-    const StoneDefinition* GetEquippedDefinition(RE::PlayerCharacter* a_player)
-    {
-        if (!a_player || g_definitionByFullFormID.empty()) {
-            return nullptr;
-        }
-
-        const auto inventory = a_player->GetInventory([](RE::TESBoundObject& a_object) {
-            return a_object.IsArmor();
-        });
-
-        for (const auto& [item, data] : inventory) {
-            const auto& [count, entry] = data;
-            if (count <= 0 || !entry || !entry->IsWorn()) {
-                continue;
-            }
-            if (const auto it = g_definitionByFullFormID.find(item->GetFormID()); it != g_definitionByFullFormID.end()) {
-                return it->second;
-            }
-        }
-        return nullptr;
-    }
-
-    int GetWeaponTypeCode(RE::TESForm* a_form)
-    {
-        auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
-        return weapon ? static_cast<int>(weapon->GetWeaponType()) : 0;
-    }
-
-    bool IsOneHanded(RE::TESForm* a_form)
-    {
-        const int type = GetWeaponTypeCode(a_form);
-        return type >= 1 && type <= 4;
-    }
-
-    bool IsTwoHanded(RE::TESForm* a_form)
-    {
-        const int type = GetWeaponTypeCode(a_form);
-        return type == 5 || type == 6;
-    }
-
-    bool IsBow(RE::TESForm* a_form)
-    {
-        auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
-        return weapon && weapon->IsBow() && !weapon->IsCrossbow();
-    }
-
-    bool IsCrossbow(RE::TESForm* a_form)
-    {
-        auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
-        return weapon && weapon->IsCrossbow();
-    }
-
-    bool IsShield(RE::TESForm* a_form)
-    {
-        auto* armor = a_form ? a_form->As<RE::TESObjectARMO>() : nullptr;
-        return armor && armor->IsShield();
-    }
-
-    bool IsColossusWeapon(RE::TESForm* a_form)
-    {
-        auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
-        if (!weapon) {
-            return false;
-        }
-        if (static_cast<int>(weapon->GetWeaponType()) == 6) {
-            return true;
-        }
-        for (auto* keyword : g_colossusKeywords) {
-            if (keyword && weapon->HasKeyword(keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    bool EquipmentConditionMet(RE::PlayerCharacter* a_player, EquipRule a_rule)
-    {
-        if (!a_player) {
-            return false;
-        }
-
-        auto* right = a_player->GetEquippedObject(false);
-        auto* left = a_player->GetEquippedObject(true);
-
-        switch (a_rule) {
-        case EquipRule::Any:
-            return true;
-        case EquipRule::DualWield1H:
-            return IsOneHanded(right) && IsOneHanded(left);
-        case EquipRule::TwoHanded:
-            return IsTwoHanded(right);
-        case EquipRule::NotTwoHanded:
-            return !IsTwoHanded(right);
-        case EquipRule::ShieldLeft:
-            return IsShield(left);
-        case EquipRule::Colossus:
-            return IsColossusWeapon(right);
-        case EquipRule::Bow:
-            return IsBow(right);
-        case EquipRule::Crossbow:
-            return IsCrossbow(right);
-        case EquipRule::OneHanded:
-            return IsOneHanded(right);
-        case EquipRule::OneHandedOrCrossbow:
-            return IsOneHanded(right) || IsCrossbow(right);
-        default:
-            return false;
-        }
-    }
-
-    float CalculateAdjustedMagicCost(RE::PlayerCharacter* a_player, const StoneDefinition& a_def, std::uint8_t a_tier)
-    {
-        if (!a_player || a_tier < 1 || a_tier > 3) {
-            return a_def.resourceCost;
-        }
-
-        auto* probe = g_alterationProbes[a_tier - 1];
-        if (!probe) {
-            return a_def.resourceCost;
-        }
-
-        const auto oldCostOverride = probe->data.costOverride;
-        const auto oldFlags = probe->data.flags;
-
-        probe->data.costOverride = static_cast<std::int32_t>(std::lround(a_def.resourceCost));
-        probe->data.flags.set(RE::SpellItem::SpellFlag::kCostOverride);
-        const float adjusted = probe->CalculateMagickaCost(a_player);
-
-        probe->data.costOverride = oldCostOverride;
-        probe->data.flags = oldFlags;
-
-        if (!std::isfinite(adjusted) || adjusted < 0.0f) {
-            return a_def.resourceCost;
-        }
-        return adjusted;
-    }
-
-    bool ResourceConditionMet(RE::PlayerCharacter* a_player, const StoneDefinition& a_def, std::uint8_t a_tier)
-    {
-        if (!a_player) {
-            return false;
-        }
-
-        auto* avOwner = a_player->AsActorValueOwner();
-        if (!avOwner) {
-            return false;
-        }
-
-        if (a_def.resource == Resource::Magicka) {
-            const float needed = CalculateAdjustedMagicCost(a_player, a_def, a_tier);
-            return avOwner->GetActorValue(RE::ActorValue::kMagicka) + 0.001f >= needed;
-        }
-
-        return avOwner->GetActorValue(RE::ActorValue::kStamina) + 0.001f >= a_def.resourceCost;
-    }
-
-    bool TechniqueConditionsMet(RE::PlayerCharacter* a_player, const StoneDefinition& a_def, std::uint8_t a_tier)
-    {
-        return EquipmentConditionMet(a_player, a_def.equipRule) && ResourceConditionMet(a_player, a_def, a_tier);
-    }
-
-    std::pair<bool, float> GetCooldownState(RE::PlayerCharacter* a_player, std::uint8_t a_tier)
-    {
-        if (!a_player || a_tier < 1 || a_tier > 3) {
-            return { false, 1.0f };
-        }
-
-        auto* cooldownMGEF = g_cooldownMGEFs[a_tier - 1];
-        if (!cooldownMGEF) {
-            return { false, 1.0f };
-        }
-
-        auto* magicTarget = a_player->AsMagicTarget();
-        auto* effects = magicTarget ? magicTarget->GetActiveEffectList() : nullptr;
-        if (!effects) {
-            return { false, 1.0f };
-        }
-
-        for (auto* effect : *effects) {
-            if (!effect || effect->flags.any(RE::ActiveEffect::Flag::kInactive, RE::ActiveEffect::Flag::kDispelled)) {
-                continue;
-            }
-            if (effect->GetBaseObject() != cooldownMGEF || effect->duration <= 0.0f) {
-                continue;
-            }
-
-            const float progress = std::clamp(effect->elapsedSeconds / effect->duration, 0.0f, 1.0f);
-            return { true, progress };
-        }
-        return { false, 1.0f };
+        SKSE::log::info(
+            "Technique Charge globals: current={} max={} progress={} recovery={}",
+            g_currentCharges ? "OK" : "MISSING",
+            g_maxCharges ? "OK" : "MISSING",
+            g_rechargeProgress ? "OK" : "MISSING",
+            g_recoveryPercent ? "OK" : "MISSING");
     }
 
     bool MeaningfullyChanged(const HUDState& a_state)
@@ -378,15 +146,11 @@ namespace
         if (!g_hasLastState) {
             return true;
         }
-        if (a_state.equippedTier != g_lastState.equippedTier) {
-            return true;
-        }
-        for (std::size_t i = 0; i < a_state.progress.size(); ++i) {
-            if (std::fabs(a_state.progress[i] - g_lastState.progress[i]) >= 0.0025f) {
-                return true;
-            }
-        }
-        return false;
+
+        return std::fabs(a_state.current - g_lastState.current) >= 0.001f ||
+               std::fabs(a_state.max - g_lastState.max) >= 0.001f ||
+               std::fabs(a_state.progress - g_lastState.progress) >= 0.0025f ||
+               std::fabs(a_state.recovery - g_lastState.recovery) >= 0.01f;
     }
 
     void PushState(const HUDState& a_state)
@@ -396,11 +160,11 @@ namespace
         }
 
         const auto script = std::format(
-            "window.TechniqueHUD&&window.TechniqueHUD.setState({{equippedTier:{},p1:{:.5f},p2:{:.5f},p3:{:.5f}}});",
-            a_state.equippedTier,
-            a_state.progress[0],
-            a_state.progress[1],
-            a_state.progress[2]);
+            "window.TechniqueHUD&&window.TechniqueHUD.setState({{current:{:.3f},max:{:.3f},progress:{:.5f},recovery:{:.3f}}});",
+            a_state.current,
+            a_state.max,
+            a_state.progress,
+            a_state.recovery);
 
         g_prisma->Invoke(g_view, script.c_str());
         g_lastState = a_state;
@@ -409,27 +173,15 @@ namespace
 
     void UpdateHUDOnGameThread()
     {
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player) {
+        if (!g_currentCharges || !g_maxCharges || !g_rechargeProgress || !g_recoveryPercent) {
             return;
         }
 
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= g_nextStoneScan) {
-            g_cachedDefinition = GetEquippedDefinition(player);
-            g_nextStoneScan = now + 250ms;
-        }
-
         HUDState state{};
-        if (g_cachedDefinition) {
-            state.equippedTier = GetTechniqueTier(*g_cachedDefinition);
-        }
-
-        for (std::uint8_t tier = 1; tier <= 3; ++tier) {
-            const auto [cooling, progress] = GetCooldownState(player, tier);
-            state.progress[tier - 1] = cooling ? progress : 1.0f;
-        }
-
+        state.current = std::clamp(g_currentCharges->value, 0.0f, 5.0f);
+        state.max = std::clamp(g_maxCharges->value, 0.0f, 5.0f);
+        state.progress = std::clamp(g_rechargeProgress->value, 0.0f, 1.0f);
+        state.recovery = std::clamp(g_recoveryPercent->value, 0.0f, 95.0f);
         PushState(state);
     }
 
@@ -459,14 +211,14 @@ namespace
 
         int left = g_config.left;
         int bottom = g_config.bottom;
-        int size = g_config.size;
-        if (std::sscanf(a_argument, "%d|%d|%d", &left, &bottom, &size) != 3) {
+        int scale = g_config.scale;
+        if (std::sscanf(a_argument, "%d|%d|%d", &left, &bottom, &scale) != 3) {
             return;
         }
 
         g_config.left = std::clamp(left, 0, 4000);
         g_config.bottom = std::clamp(bottom, 0, 4000);
-        g_config.size = std::clamp(size, 40, 200);
+        g_config.scale = std::clamp(scale, 50, 250);
         SaveLayoutConfig();
     }
 
@@ -486,7 +238,9 @@ namespace
 
         const auto script = std::format(
             "window.TechniqueHUD&&window.TechniqueHUD.openSettings({},{},{});",
-            g_config.left, g_config.bottom, g_config.size);
+            g_config.left,
+            g_config.bottom,
+            g_config.scale);
         g_prisma->Invoke(g_view, script.c_str());
 
         if (!g_prisma->Focus(g_view, true)) {
@@ -582,11 +336,13 @@ namespace
 
             const auto layout = std::format(
                 "window.TechniqueHUD&&window.TechniqueHUD.setLayout({},{},{});",
-                g_config.left, g_config.bottom, g_config.size);
+                g_config.left,
+                g_config.bottom,
+                g_config.scale);
             g_prisma->Invoke(g_view, layout.c_str());
             g_prisma->SetOrder(g_view, 500);
             g_prisma->Show(g_view);
-            SKSE::log::info("Technique HUD DOM ready");
+            SKSE::log::info("Technique Charge HUD DOM ready");
         });
 
         if (!g_view || !g_prisma->IsValid(g_view)) {
@@ -618,6 +374,7 @@ namespace
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
         case SKSE::MessagingInterface::kNewGame:
+            g_hasLastState = false;
             if (g_settingsOpen) {
                 CloseSettingsMenu();
             }
@@ -647,6 +404,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique HUD v5.6.14 independent tier meters loaded");
+    SKSE::log::info("HE Technique HUD v5.7.6 shared charge bars loaded");
     return true;
 }
