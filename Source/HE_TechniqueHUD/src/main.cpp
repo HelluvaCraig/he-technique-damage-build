@@ -404,6 +404,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique HUD v5.7.6 shared charge bars loaded");
+    SKSE::log::info("HE Technique HUD v5.7.7 charge lock/recharge states loaded");
     return true;
 }
