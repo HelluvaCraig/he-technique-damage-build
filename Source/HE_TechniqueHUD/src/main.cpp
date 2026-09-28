@@ -423,17 +423,21 @@ namespace
         state.recovery = std::clamp(g_recoveryPercent->value, 0.0f, 95.0f);
 
         if (player) {
-            state.healthCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kHealth));
-            state.healthMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kHealth));
-            state.magickaCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kMagicka));
-            state.magickaMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kMagicka));
-            state.staminaCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kStamina));
-            state.staminaMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kStamina));
+            if (auto* avOwner = player->AsActorValueOwner()) {
+                state.healthCurrent = std::max(0.0f, avOwner->GetActorValue(RE::ActorValue::kHealth));
+                state.healthMax = std::max(1.0f, avOwner->GetPermanentActorValue(RE::ActorValue::kHealth));
+                state.magickaCurrent = std::max(0.0f, avOwner->GetActorValue(RE::ActorValue::kMagicka));
+                state.magickaMax = std::max(1.0f, avOwner->GetPermanentActorValue(RE::ActorValue::kMagicka));
+                state.staminaCurrent = std::max(0.0f, avOwner->GetActorValue(RE::ActorValue::kStamina));
+                state.staminaMax = std::max(1.0f, avOwner->GetPermanentActorValue(RE::ActorValue::kStamina));
+            }
+
             state.level = static_cast<float>(player->GetLevel());
 
-            if (player->skills && player->skills->data) {
-                const auto xp = std::max(0.0f, player->skills->data->xp);
-                const auto threshold = player->skills->data->levelThreshold;
+            auto* skills = player->GetPlayerRuntimeData().skills;
+            if (skills && skills->data) {
+                const auto xp = std::max(0.0f, skills->data->xp);
+                const auto threshold = skills->data->levelThreshold;
                 state.xpProgress = threshold > 0.0f ?
                     std::clamp(xp / threshold, 0.0f, 1.0f) :
                     0.0f;
