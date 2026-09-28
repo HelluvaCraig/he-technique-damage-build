@@ -1,4 +1,4 @@
-name: Build HE Technique HUD Sigil
+name: Build HelluvaHUD
 
 on:
   workflow_dispatch:
@@ -58,16 +58,16 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path '..\..\artifact\SKSE\Plugins' | Out-Null
-          New-Item -ItemType Directory -Force -Path '..\..\artifact\PrismaUI\views\HE_TechniqueHUD' | Out-Null
-          Copy-Item 'build\release\HE_TechniqueHUD.dll' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.dll'
-          Copy-Item 'package\HE_TechniqueHUD.ini' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.ini'
-          Copy-Item 'ui\index.html' '..\..\artifact\PrismaUI\views\HE_TechniqueHUD\index.html'
-          if (Test-Path 'build\release\HE_TechniqueHUD.pdb') {
-            Copy-Item 'build\release\HE_TechniqueHUD.pdb' '..\..\artifact\SKSE\Plugins\HE_TechniqueHUD.pdb'
+          New-Item -ItemType Directory -Force -Path '..\..\artifact\PrismaUI\views\HelluvaHUD' | Out-Null
+          Copy-Item 'build\release\HelluvaHUD.dll' '..\..\artifact\SKSE\Plugins\HelluvaHUD.dll'
+          Copy-Item 'package\HelluvaHUD.ini' '..\..\artifact\SKSE\Plugins\HelluvaHUD.ini'
+          Copy-Item 'ui\index.html' '..\..\artifact\PrismaUI\views\HelluvaHUD\index.html'
+          if (Test-Path 'build\release\HelluvaHUD.pdb') {
+            Copy-Item 'build\release\HelluvaHUD.pdb' '..\..\artifact\SKSE\Plugins\HelluvaHUD.pdb'
           }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueHUD-v5.7.8-menu-framework
+          name: HelluvaHUD-v0.1.0-combat-visibility
           path: artifact
