@@ -31,6 +31,11 @@ jobs:
         run: |
           Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/PrismaUI-SKSE/example-skse-plugin/main/src/PrismaUI_API.h' -OutFile 'src/PrismaUI_API.h'
 
+      - name: Download SKSE Menu Framework API header
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/QTR-Modding/SKSE-Menu-Framework-3-API/main/SKSEMenuFramework.h' -OutFile 'src/SKSEMenuFramework.h'
+
       - name: Cache vcpkg binaries
         uses: actions/cache@v4
         with:
@@ -69,5 +74,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueHUD-v5.6.11-layered-sigil
+          name: HE_TechniqueHUD-v5.7.8-menu-framework
           path: artifact
