@@ -93,6 +93,24 @@ namespace
         return a_fallback;
     }
 
+    bool FileContainsSetting(const std::filesystem::path& a_path, const std::string& a_key)
+    {
+        std::ifstream input(a_path);
+        if (!input.is_open()) {
+            return false;
+        }
+
+        const auto prefix = a_key + "=";
+        std::string line;
+        while (std::getline(input, line)) {
+            line = Trim(line);
+            if (line.starts_with(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void ClampConfig()
     {
         g_config.left = std::clamp(g_config.left, 0, 4000);
@@ -209,9 +227,13 @@ namespace
         ApplyIniFile(g_defaultIniPath);
 
         bool migrated = false;
+        bool needsCoreLayoutMigration = false;
+
         if (std::filesystem::exists(g_userIniPath)) {
+            needsCoreLayoutMigration = !FileContainsSetting(g_userIniPath, "LayoutVersion");
             ApplyIniFile(g_userIniPath);
         } else if (std::filesystem::exists(g_legacyUserIniPath)) {
+            needsCoreLayoutMigration = true;
             ApplyIniFile(g_legacyUserIniPath);
             migrated = true;
         }
@@ -219,9 +241,8 @@ namespace
         ClampConfig();
 
         // v0.2 changes from a standalone 240x10 charge widget to the 772x68
-        // core stats cluster. Migrate the old placement once so existing users
-        // land on the Figma-authored bottom-centre position.
-        if (g_config.layoutVersion < 2) {
+        // core stats cluster. Existing v0.1 user INIs have no LayoutVersion.
+        if (needsCoreLayoutMigration || g_config.layoutVersion < 2) {
             g_config.left = 574;
             g_config.bottom = 32;
             g_config.layoutVersion = 2;
