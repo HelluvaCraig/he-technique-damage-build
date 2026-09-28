@@ -15,6 +15,32 @@ namespace
     constexpr bool kBatchAuditDisableCooldowns = false;
     constexpr bool kPhysicalTraceEnabled = false;
 
+    // Shared Technique Charge system.
+    // OAR reads Variable01 directly: Adept >=1, Expert >=2, Master >=3.
+    constexpr RE::ActorValue kTechniqueChargesAV = RE::ActorValue::kVariable01;
+    // Technique Recovery enchantments add their percentage to Variable02.
+    constexpr RE::ActorValue kTechniqueRecoveryAV = RE::ActorValue::kVariable02;
+    constexpr RE::ActorValue kTechniqueRechargeProgressAV = RE::ActorValue::kVariable03;
+    constexpr RE::ActorValue kTechniqueMaxChargesAV = RE::ActorValue::kVariable04;
+    constexpr float kBaseTechniqueRechargeSeconds = 30.0f;
+    constexpr float kMaxTechniqueRecoveryPercent = 90.0f;
+
+    constexpr RE::FormID kAdeptChargeSignalSpellLocalID = 0x801;
+    constexpr RE::FormID kExpertChargeSignalSpellLocalID = 0x802;
+    constexpr RE::FormID kMasterChargeSignalSpellLocalID = 0x803;
+
+    constexpr std::uint32_t FourCC(char a, char b, char c, char d)
+    {
+        return static_cast<std::uint32_t>(a) |
+               (static_cast<std::uint32_t>(b) << 8) |
+               (static_cast<std::uint32_t>(c) << 16) |
+               (static_cast<std::uint32_t>(d) << 24);
+    }
+
+    constexpr std::uint32_t kSerializationUniqueID = FourCC('H', 'E', 'T', 'C');
+    constexpr std::uint32_t kChargeStateRecord = FourCC('C', 'H', 'R', 'G');
+    constexpr std::uint32_t kChargeStateVersion = 1;
+
     constexpr auto kSkyrimPlugin = "Skyrim.esm";
     constexpr RE::FormID kOakfleshLocalID = 0x5AD5C;
     constexpr RE::FormID kStonefleshLocalID = 0x5AD5D;
@@ -90,6 +116,35 @@ namespace
     RE::SpellItem* g_radiantBladeDanceSpell150 = nullptr;
     RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
     RE::SpellItem* g_radiantCarianImpactSpell = nullptr;
+
+    RE::SpellItem* g_adeptChargeSignalSpell = nullptr;
+    RE::SpellItem* g_expertChargeSignalSpell = nullptr;
+    RE::SpellItem* g_masterChargeSignalSpell = nullptr;
+
+    struct TechniqueChargeState
+    {
+        std::uint32_t currentCharges{ 0 };
+        std::uint32_t previousMaxCharges{ 0 };
+        float rechargeProgressSeconds{ 0.0f };
+        bool initialized{ false };
+    };
+
+    struct SerializedTechniqueChargeState
+    {
+        std::uint32_t currentCharges{ 0 };
+        std::uint32_t previousMaxCharges{ 0 };
+        float rechargeProgressSeconds{ 0.0f };
+        std::uint32_t initialized{ 0 };
+    };
+
+    TechniqueChargeState g_chargeState{};
+    bool g_chargeClockStarted = false;
+    bool g_chargeClockPaused = false;
+    bool g_chargeInputSinkRegistered = false;
+    bool g_chargeMenuSinkRegistered = false;
+    std::chrono::steady_clock::time_point g_chargeLastUpdate{};
+    std::chrono::steady_clock::time_point g_lastChargeSignalTime{};
+    RE::FormID g_lastChargeSignalSpell = 0;
 
     struct RadiantFinisherEffectRef
     {
@@ -437,6 +492,19 @@ namespace
         // rises linearly to +60% at Alteration 100.
         const float normalized = std::clamp((a_alterationSkill - 15.0f) / 85.0f, 0.0f, 1.0f);
         return 1.0f + (0.60f * normalized);
+    }
+
+    float GetMaxMagickaTechniqueMultiplier(RE::Actor* a_actor, float& a_maxMagicka)
+    {
+        a_maxMagicka = 100.0f;
+        if (a_actor) {
+            a_maxMagicka = std::max(0.0f, a_actor->GetActorValueMax(RE::ActorValue::kMagicka));
+        }
+
+        // Keep the already-balanced magic curve almost unchanged:
+        // +1% Technique damage per 100 maximum Magicka above the 100 base.
+        const float aboveBase = std::max(0.0f, a_maxMagicka - 100.0f);
+        return 1.0f + ((aboveBase / 100.0f) * 0.01f);
     }
 
     bool SetSpellEffectMagnitude(
@@ -871,8 +939,10 @@ namespace
     {
         float alterationSkill = 15.0f;
         const float alterationMult = GetAlterationDamageMultiplier(a_actor, alterationSkill);
+        float maxMagicka = 100.0f;
+        const float maxMagickaMult = GetMaxMagickaTechniqueMultiplier(a_actor, maxMagicka);
         const float baseBudget = GetMagicRankBaseDamage(a_def.tier);
-        const float scaledBudget = baseBudget * alterationMult;
+        const float scaledBudget = baseBudget * alterationMult * maxMagickaMult;
 
         bool configured = false;
 
@@ -1187,13 +1257,15 @@ namespace
         }
 
         SKSE::log::info(
-            "[MAGIC DAMAGE CONFIG] Technique={} stone={:03X} rank={} baseMagicBudget={:.2f} alteration={:.2f} alterationMult={:.4f} scaledMagicBudget={:.2f} configured={}",
+            "[MAGIC DAMAGE CONFIG] Technique={} stone={:03X} rank={} baseMagicBudget={:.2f} alteration={:.2f} alterationMult={:.4f} maxMagicka={:.2f} maxMagickaMult={:.4f} scaledMagicBudget={:.2f} configured={}",
             a_def.name,
             a_def.localFormID,
             GetMagicRankName(a_def.tier),
             baseBudget,
             alterationSkill,
             alterationMult,
+            maxMagicka,
+            maxMagickaMult,
             scaledBudget,
             configured);
     }
@@ -1279,6 +1351,411 @@ namespace
             a_signalFormID);
     }
 
+
+    std::uint32_t GetTechniqueMaxCharges(RE::Actor* a_actor)
+    {
+        const auto level = a_actor ? a_actor->GetLevel() : 1;
+        if (level >= 50) {
+            return 5;
+        }
+        if (level >= 35) {
+            return 4;
+        }
+        if (level >= 20) {
+            return 3;
+        }
+        if (level >= 10) {
+            return 2;
+        }
+        return 1;
+    }
+
+    float GetTechniqueRecoveryPercent(RE::Actor* a_actor)
+    {
+        if (!a_actor) {
+            return 0.0f;
+        }
+
+        const float value = a_actor->GetActorValue(kTechniqueRecoveryAV);
+        if (!std::isfinite(value)) {
+            return 0.0f;
+        }
+        return std::clamp(value, 0.0f, kMaxTechniqueRecoveryPercent);
+    }
+
+    float GetTechniqueRechargeSeconds(RE::Actor* a_actor)
+    {
+        const float recoveryPercent = GetTechniqueRecoveryPercent(a_actor);
+        return kBaseTechniqueRechargeSeconds * (1.0f - (recoveryPercent / 100.0f));
+    }
+
+    void SyncTechniqueChargeActorValues(RE::Actor* a_actor)
+    {
+        if (!a_actor || !g_chargeState.initialized) {
+            return;
+        }
+
+        const std::uint32_t maxCharges = GetTechniqueMaxCharges(a_actor);
+        const float rechargeSeconds = std::max(0.01f, GetTechniqueRechargeSeconds(a_actor));
+        const float normalizedProgress =
+            g_chargeState.currentCharges >= maxCharges ?
+                0.0f :
+                std::clamp(g_chargeState.rechargeProgressSeconds / rechargeSeconds, 0.0f, 1.0f);
+
+        a_actor->SetActorValue(kTechniqueChargesAV, static_cast<float>(g_chargeState.currentCharges));
+        a_actor->SetActorValue(kTechniqueRechargeProgressAV, normalizedProgress);
+        a_actor->SetActorValue(kTechniqueMaxChargesAV, static_cast<float>(maxCharges));
+    }
+
+    void InitializeTechniqueChargeState(RE::Actor* a_actor)
+    {
+        if (!a_actor) {
+            return;
+        }
+
+        const std::uint32_t maxCharges = GetTechniqueMaxCharges(a_actor);
+        g_chargeState.currentCharges = maxCharges;
+        g_chargeState.previousMaxCharges = maxCharges;
+        g_chargeState.rechargeProgressSeconds = 0.0f;
+        g_chargeState.initialized = true;
+        g_chargeLastUpdate = std::chrono::steady_clock::now();
+        g_chargeClockStarted = true;
+
+        if (auto* ui = RE::UI::GetSingleton()) {
+            g_chargeClockPaused = ui->GameIsPaused();
+        } else {
+            g_chargeClockPaused = false;
+        }
+
+        SyncTechniqueChargeActorValues(a_actor);
+        SKSE::log::info(
+            "[CHARGE INIT] level={} current={}/{} recharge={:.2f}s recovery={:.1f}%",
+            a_actor->GetLevel(),
+            g_chargeState.currentCharges,
+            maxCharges,
+            GetTechniqueRechargeSeconds(a_actor),
+            GetTechniqueRecoveryPercent(a_actor));
+    }
+
+    void AdvanceTechniqueChargeState(
+        RE::Actor* a_actor,
+        std::chrono::steady_clock::time_point a_now,
+        bool a_countElapsed)
+    {
+        if (!a_actor) {
+            return;
+        }
+
+        if (!g_chargeState.initialized) {
+            InitializeTechniqueChargeState(a_actor);
+            return;
+        }
+
+        const std::uint32_t maxCharges = GetTechniqueMaxCharges(a_actor);
+
+        if (g_chargeState.previousMaxCharges == 0) {
+            g_chargeState.previousMaxCharges = maxCharges;
+        }
+
+        if (maxCharges > g_chargeState.previousMaxCharges) {
+            const std::uint32_t gained = maxCharges - g_chargeState.previousMaxCharges;
+            g_chargeState.currentCharges =
+                std::min(maxCharges, g_chargeState.currentCharges + gained);
+            SKSE::log::info(
+                "[CHARGE CAPACITY] level={} max {}->{} current={} (+{} unlocked)",
+                a_actor->GetLevel(),
+                g_chargeState.previousMaxCharges,
+                maxCharges,
+                g_chargeState.currentCharges,
+                gained);
+        } else if (maxCharges < g_chargeState.previousMaxCharges) {
+            g_chargeState.currentCharges = std::min(g_chargeState.currentCharges, maxCharges);
+        }
+        g_chargeState.previousMaxCharges = maxCharges;
+
+        if (!g_chargeClockStarted) {
+            g_chargeLastUpdate = a_now;
+            g_chargeClockStarted = true;
+            SyncTechniqueChargeActorValues(a_actor);
+            return;
+        }
+
+        float elapsedSeconds = 0.0f;
+        if (a_countElapsed) {
+            elapsedSeconds = std::chrono::duration<float>(a_now - g_chargeLastUpdate).count();
+            if (!std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0f || elapsedSeconds > 3600.0f) {
+                elapsedSeconds = 0.0f;
+            }
+        }
+        g_chargeLastUpdate = a_now;
+
+        if (g_chargeState.currentCharges < maxCharges && elapsedSeconds > 0.0f) {
+            g_chargeState.rechargeProgressSeconds += elapsedSeconds;
+
+            const float rechargeSeconds = std::max(0.01f, GetTechniqueRechargeSeconds(a_actor));
+            std::uint32_t restored = 0;
+            while (g_chargeState.currentCharges < maxCharges &&
+                   g_chargeState.rechargeProgressSeconds + 0.0001f >= rechargeSeconds) {
+                g_chargeState.rechargeProgressSeconds -= rechargeSeconds;
+                ++g_chargeState.currentCharges;
+                ++restored;
+            }
+
+            if (g_chargeState.currentCharges >= maxCharges) {
+                g_chargeState.rechargeProgressSeconds = 0.0f;
+            }
+
+            if (restored > 0) {
+                SKSE::log::info(
+                    "[CHARGE RECHARGE] +{} current={}/{} nextProgress={:.2f}/{:.2f}s recovery={:.1f}%",
+                    restored,
+                    g_chargeState.currentCharges,
+                    maxCharges,
+                    g_chargeState.rechargeProgressSeconds,
+                    rechargeSeconds,
+                    GetTechniqueRecoveryPercent(a_actor));
+            }
+        } else if (g_chargeState.currentCharges >= maxCharges) {
+            g_chargeState.rechargeProgressSeconds = 0.0f;
+        }
+
+        SyncTechniqueChargeActorValues(a_actor);
+    }
+
+    void UpdateTechniqueChargeState(RE::Actor* a_actor)
+    {
+        if (!a_actor) {
+            return;
+        }
+
+        auto* ui = RE::UI::GetSingleton();
+        const bool pausedNow = ui && ui->GameIsPaused();
+        const auto now = std::chrono::steady_clock::now();
+
+        // g_chargeClockPaused describes the interval since g_chargeLastUpdate.
+        AdvanceTechniqueChargeState(a_actor, now, !g_chargeClockPaused);
+        g_chargeClockPaused = pausedNow;
+    }
+
+    bool SpendTechniqueCharges(RE::Actor* a_actor, std::uint32_t a_cost, RE::FormID a_signalSpell)
+    {
+        if (!a_actor || a_cost == 0) {
+            return false;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+
+        // Protect against duplicate SpellCast events from the same animation payload.
+        if (g_lastChargeSignalSpell == a_signalSpell &&
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - g_lastChargeSignalTime).count() < 250) {
+            SKSE::log::info("[CHARGE SPEND] duplicate signal {:08X} ignored", a_signalSpell);
+            return true;
+        }
+
+        UpdateTechniqueChargeState(a_actor);
+
+        const std::uint32_t maxCharges = GetTechniqueMaxCharges(a_actor);
+        if (g_chargeState.currentCharges < a_cost) {
+            SKSE::log::warn(
+                "[CHARGE SPEND] insufficient cost={} current={}/{} signal={:08X}",
+                a_cost,
+                g_chargeState.currentCharges,
+                maxCharges,
+                a_signalSpell);
+            return false;
+        }
+
+        const bool wasFull = g_chargeState.currentCharges >= maxCharges;
+        g_chargeState.currentCharges -= a_cost;
+        if (wasFull) {
+            // Starting a new recharge queue begins at zero progress.
+            g_chargeState.rechargeProgressSeconds = 0.0f;
+            g_chargeLastUpdate = now;
+            g_chargeClockStarted = true;
+        }
+
+        g_lastChargeSignalSpell = a_signalSpell;
+        g_lastChargeSignalTime = now;
+
+        SyncTechniqueChargeActorValues(a_actor);
+        SKSE::log::info(
+            "[CHARGE SPEND] cost={} current={}/{} recharge={:.2f}s recovery={:.1f}% signal={:08X}",
+            a_cost,
+            g_chargeState.currentCharges,
+            maxCharges,
+            GetTechniqueRechargeSeconds(a_actor),
+            GetTechniqueRecoveryPercent(a_actor),
+            a_signalSpell);
+        return true;
+    }
+
+    bool HandleTechniqueChargeSignal(RE::Actor* a_actor, RE::FormID a_spellFormID)
+    {
+        if (g_adeptChargeSignalSpell && a_spellFormID == g_adeptChargeSignalSpell->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 1, a_spellFormID);
+            return true;
+        }
+        if (g_expertChargeSignalSpell && a_spellFormID == g_expertChargeSignalSpell->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 2, a_spellFormID);
+            return true;
+        }
+        if (g_masterChargeSignalSpell && a_spellFormID == g_masterChargeSignalSpell->GetFormID()) {
+            SpendTechniqueCharges(a_actor, 3, a_spellFormID);
+            return true;
+        }
+        return false;
+    }
+
+    class TechniqueChargeInputSink final : public RE::BSTEventSink<RE::InputEvent*>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(
+            RE::InputEvent* const* a_events,
+            RE::BSTEventSource<RE::InputEvent*>*) override
+        {
+            if (!a_events) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                UpdateTechniqueChargeState(player);
+            }
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    class TechniqueChargeMenuSink final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::MenuOpenCloseEvent* a_event,
+            RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+        {
+            if (!a_event) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                const auto now = std::chrono::steady_clock::now();
+
+                // Count or discard the interval based on the pause state that
+                // was active BEFORE this menu transition.
+                AdvanceTechniqueChargeState(player, now, !g_chargeClockPaused);
+
+                if (auto* ui = RE::UI::GetSingleton()) {
+                    g_chargeClockPaused = ui->GameIsPaused();
+                }
+                g_chargeLastUpdate = now;
+                g_chargeClockStarted = true;
+                SyncTechniqueChargeActorValues(player);
+            }
+
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+
+    void RegisterTechniqueChargeSinks()
+    {
+        if (!g_chargeInputSinkRegistered) {
+            static TechniqueChargeInputSink inputSink;
+            if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
+                input->AddEventSink(&inputSink);
+                g_chargeInputSinkRegistered = true;
+                SKSE::log::info("Technique Charge input sink registered");
+            }
+        }
+
+        if (!g_chargeMenuSinkRegistered) {
+            static TechniqueChargeMenuSink menuSink;
+            if (auto* ui = RE::UI::GetSingleton()) {
+                ui->AddEventSink<RE::MenuOpenCloseEvent>(&menuSink);
+                g_chargeMenuSinkRegistered = true;
+                g_chargeClockPaused = ui->GameIsPaused();
+                SKSE::log::info("Technique Charge menu/pause sink registered");
+            }
+        }
+    }
+
+    void ResetTechniqueChargeState()
+    {
+        g_chargeState = {};
+        g_chargeClockStarted = false;
+        g_chargeClockPaused = false;
+        g_lastChargeSignalSpell = 0;
+        g_lastChargeSignalTime = {};
+    }
+
+    void SaveTechniqueChargeState(SKSE::SerializationInterface* a_intfc)
+    {
+        if (!a_intfc) {
+            return;
+        }
+
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            UpdateTechniqueChargeState(player);
+        }
+
+        SerializedTechniqueChargeState saved{};
+        saved.currentCharges = g_chargeState.currentCharges;
+        saved.previousMaxCharges = g_chargeState.previousMaxCharges;
+        saved.rechargeProgressSeconds = g_chargeState.rechargeProgressSeconds;
+        saved.initialized = g_chargeState.initialized ? 1u : 0u;
+
+        if (!a_intfc->WriteRecord(kChargeStateRecord, kChargeStateVersion, saved)) {
+            SKSE::log::error("[CHARGE SAVE] failed to write state");
+        } else {
+            SKSE::log::info(
+                "[CHARGE SAVE] current={} previousMax={} progress={:.2f} initialized={}",
+                saved.currentCharges,
+                saved.previousMaxCharges,
+                saved.rechargeProgressSeconds,
+                saved.initialized);
+        }
+    }
+
+    void LoadTechniqueChargeState(SKSE::SerializationInterface* a_intfc)
+    {
+        ResetTechniqueChargeState();
+        if (!a_intfc) {
+            return;
+        }
+
+        std::uint32_t type = 0;
+        std::uint32_t version = 0;
+        std::uint32_t length = 0;
+        while (a_intfc->GetNextRecordInfo(type, version, length)) {
+            if (type != kChargeStateRecord || version != kChargeStateVersion) {
+                continue;
+            }
+
+            SerializedTechniqueChargeState saved{};
+            if (length != sizeof(saved) ||
+                a_intfc->ReadRecordData(saved) != sizeof(saved)) {
+                SKSE::log::warn(
+                    "[CHARGE LOAD] invalid record length={} expected={}",
+                    length,
+                    sizeof(saved));
+                continue;
+            }
+
+            g_chargeState.currentCharges = saved.currentCharges;
+            g_chargeState.previousMaxCharges = saved.previousMaxCharges;
+            g_chargeState.rechargeProgressSeconds =
+                std::max(0.0f, saved.rechargeProgressSeconds);
+            g_chargeState.initialized = saved.initialized != 0;
+            SKSE::log::info(
+                "[CHARGE LOAD] current={} previousMax={} progress={:.2f} initialized={}",
+                g_chargeState.currentCharges,
+                g_chargeState.previousMaxCharges,
+                g_chargeState.rechargeProgressSeconds,
+                g_chargeState.initialized);
+        }
+
+        g_chargeLastUpdate = std::chrono::steady_clock::now();
+        g_chargeClockStarted = true;
+    }
+
     class MagicSpellCastSink final : public RE::BSTEventSink<RE::TESSpellCastEvent>
     {
     public:
@@ -1297,6 +1774,10 @@ namespace
 
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (HandleTechniqueChargeSignal(player, a_event->spell)) {
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -1409,11 +1890,6 @@ namespace
                     g_lastMagicActivationStone = def->localFormID;
 
                     ConfigureRepresentativeMagicDamage(player, *def);
-
-                    ChargeMagicTechniqueCost(
-                        player,
-                        *def,
-                        a_event->magicEffect);
                 }
 
                 return RE::BSEventNotifyControl::kContinue;
@@ -1709,6 +2185,13 @@ namespace
             }
         }
 
+        g_adeptChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kAdeptChargeSignalSpellLocalID, kCooldownPlugin);
+        g_expertChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kExpertChargeSignalSpellLocalID, kCooldownPlugin);
+        g_masterChargeSignalSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kMasterChargeSignalSpellLocalID, kCooldownPlugin);
+
         g_tier1AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kOakfleshLocalID, kSkyrimPlugin);
         g_tier2AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kStonefleshLocalID, kSkyrimPlugin);
         g_tier3AlterationProbe = dataHandler->LookupForm<RE::SpellItem>(kIronfleshLocalID, kSkyrimPlugin);
@@ -1767,6 +2250,12 @@ namespace
         SKSE::log::info("Resolved {}/{} physical Technique Stones", resolved, kTechniqueDamageDefinitions.size());
         SKSE::log::info("Resolved {}/{} Magic/Rune Technique Stones", magicResolved, kMagicTechniqueDefinitions.size());
         SKSE::log::info("Resolved {}/{} Magic activation signals", activationResolved, kMagicActivationSignals.size());
+        SKSE::log::info(
+            "Technique Charge signals: Adept={} Expert={} Master={}",
+            g_adeptChargeSignalSpell ? "OK" : "MISSING",
+            g_expertChargeSignalSpell ? "OK" : "MISSING",
+            g_masterChargeSignalSpell ? "OK" : "MISSING");
+
         SKSE::log::info(
             "Alteration probes: T1={} T2={} T3={}",
             g_tier1AlterationProbe ? "Oakflesh" : "MISSING",
@@ -1864,10 +2353,36 @@ namespace
         case SKSE::MessagingInterface::kPostLoad:
             RegisterPrecision();
             break;
+        case SKSE::MessagingInterface::kInputLoaded:
+            RegisterTechniqueChargeSinks();
+            break;
         case SKSE::MessagingInterface::kDataLoaded:
             ResolveForms();
             RegisterMagicDiagnosticSinks();
+            RegisterTechniqueChargeSinks();
             RegisterPrecision();
+            break;
+        case SKSE::MessagingInterface::kPostLoadGame:
+            RegisterTechniqueChargeSinks();
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                if (!g_chargeState.initialized) {
+                    InitializeTechniqueChargeState(player);
+                } else {
+                    g_chargeLastUpdate = std::chrono::steady_clock::now();
+                    g_chargeClockStarted = true;
+                    if (auto* ui = RE::UI::GetSingleton()) {
+                        g_chargeClockPaused = ui->GameIsPaused();
+                    }
+                    AdvanceTechniqueChargeState(player, g_chargeLastUpdate, false);
+                }
+            }
+            break;
+        case SKSE::MessagingInterface::kNewGame:
+            ResetTechniqueChargeState();
+            RegisterTechniqueChargeSinks();
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                InitializeTechniqueChargeState(player);
+            }
             break;
         default:
             break;
@@ -1888,12 +2403,23 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
     SKSE::Init(a_skse);
 
+    if (const auto* serialization = SKSE::GetSerializationInterface()) {
+        serialization->SetUniqueID(kSerializationUniqueID);
+        serialization->SetSaveCallback(SaveTechniqueChargeState);
+        serialization->SetLoadCallback(LoadTechniqueChargeState);
+        serialization->SetRevertCallback([](SKSE::SerializationInterface*) {
+            ResetTechniqueChargeState();
+        });
+    } else {
+        SKSE::log::error("SKSE serialization interface unavailable - Technique Charges will not persist");
+    }
+
     if (const auto* messaging = SKSE::GetMessagingInterface()) {
         messaging->RegisterListener("SKSE", MessageHandler);
     } else {
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.5.1 physical+magic final baseline loaded");
+    SKSE::log::info("HE Technique Damage v0.6.0 shared Technique Charges loaded");
     return true;
 }
