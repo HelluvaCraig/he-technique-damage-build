@@ -34,19 +34,30 @@ namespace
 
     struct Config
     {
-        int left = 22;
-        int bottom = 112;
+        int left = 574;
+        int bottom = 32;
         int scale = 100;
         int pollMs = 50;
         bool combatOnly = false;
+        int layoutVersion = 2;
     } g_config;
 
     struct HUDState
     {
-        float current = 0.0f;
-        float max = 0.0f;
-        float progress = 0.0f;
+        float chargesCurrent = 0.0f;
+        float chargesMax = 0.0f;
+        float chargeProgress = 0.0f;
         float recovery = 0.0f;
+
+        float healthCurrent = 0.0f;
+        float healthMax = 1.0f;
+        float magickaCurrent = 0.0f;
+        float magickaMax = 1.0f;
+        float staminaCurrent = 0.0f;
+        float staminaMax = 1.0f;
+
+        float level = 1.0f;
+        float xpProgress = 0.0f;
     };
 
     HUDState g_lastState{};
@@ -132,6 +143,8 @@ namespace
                     g_config.pollMs = std::stoi(value);
                 } else if (key == "CombatOnly") {
                     g_config.combatOnly = ParseBool(value, g_config.combatOnly);
+                } else if (key == "LayoutVersion") {
+                    g_config.layoutVersion = std::stoi(value);
                 }
             } catch (...) {
                 SKSE::log::warn("Ignoring invalid HelluvaHUD setting {}={} from {}", key, value, a_path.string());
@@ -169,7 +182,8 @@ namespace
             << "Bottom=" << g_config.bottom << "\n"
             << "Scale=" << g_config.scale << "\n"
             << "CombatOnly=" << (g_config.combatOnly ? 1 : 0) << "\n"
-            << "PollMs=" << g_config.pollMs << "\n";
+            << "PollMs=" << g_config.pollMs << "\n"
+            << "LayoutVersion=" << g_config.layoutVersion << "\n";
         output.flush();
 
         if (!output.good()) {
@@ -204,18 +218,27 @@ namespace
 
         ClampConfig();
 
+        // v0.2 changes from a standalone 240x10 charge widget to the 772x68
+        // core stats cluster. Migrate the old placement once so existing users
+        // land on the Figma-authored bottom-centre position.
+        if (g_config.layoutVersion < 2) {
+            g_config.left = 574;
+            g_config.bottom = 32;
+            g_config.layoutVersion = 2;
+            migrated = true;
+        }
+
         SKSE::log::info(
-            "Loaded HelluvaHUD Left={} Bottom={} Scale={}% CombatOnly={} user config={}",
+            "Loaded HelluvaHUD Left={} Bottom={} Scale={}% CombatOnly={} LayoutVersion={} user config={}",
             g_config.left,
             g_config.bottom,
             g_config.scale,
             g_config.combatOnly,
+            g_config.layoutVersion,
             std::filesystem::absolute(g_userIniPath).string());
 
         if (migrated) {
-            SKSE::log::info(
-                "Migrating legacy Technique HUD settings from {}",
-                std::filesystem::absolute(g_legacyUserIniPath).string());
+            SKSE::log::info("Writing migrated HelluvaHUD v0.2 layout");
             SaveConfig();
         }
     }
@@ -338,10 +361,18 @@ namespace
             return true;
         }
 
-        return std::fabs(a_state.current - g_lastState.current) >= 0.001f ||
-               std::fabs(a_state.max - g_lastState.max) >= 0.001f ||
-               std::fabs(a_state.progress - g_lastState.progress) >= 0.0025f ||
-               std::fabs(a_state.recovery - g_lastState.recovery) >= 0.01f;
+        return std::fabs(a_state.chargesCurrent - g_lastState.chargesCurrent) >= 0.001f ||
+               std::fabs(a_state.chargesMax - g_lastState.chargesMax) >= 0.001f ||
+               std::fabs(a_state.chargeProgress - g_lastState.chargeProgress) >= 0.0025f ||
+               std::fabs(a_state.recovery - g_lastState.recovery) >= 0.01f ||
+               std::fabs(a_state.healthCurrent - g_lastState.healthCurrent) >= 0.05f ||
+               std::fabs(a_state.healthMax - g_lastState.healthMax) >= 0.05f ||
+               std::fabs(a_state.magickaCurrent - g_lastState.magickaCurrent) >= 0.05f ||
+               std::fabs(a_state.magickaMax - g_lastState.magickaMax) >= 0.05f ||
+               std::fabs(a_state.staminaCurrent - g_lastState.staminaCurrent) >= 0.05f ||
+               std::fabs(a_state.staminaMax - g_lastState.staminaMax) >= 0.05f ||
+               std::fabs(a_state.level - g_lastState.level) >= 0.001f ||
+               std::fabs(a_state.xpProgress - g_lastState.xpProgress) >= 0.001f;
     }
 
     void PushState(const HUDState& a_state)
@@ -351,11 +382,25 @@ namespace
         }
 
         const auto script = std::format(
-            "window.HelluvaHUD&&window.HelluvaHUD.setState({{current:{:.3f},max:{:.3f},progress:{:.5f},recovery:{:.3f}}});",
-            a_state.current,
-            a_state.max,
-            a_state.progress,
-            a_state.recovery);
+            "window.HelluvaHUD&&window.HelluvaHUD.setState({{"
+            "chargesCurrent:{:.3f},chargesMax:{:.3f},chargeProgress:{:.5f},recovery:{:.3f},"
+            "healthCurrent:{:.3f},healthMax:{:.3f},"
+            "magickaCurrent:{:.3f},magickaMax:{:.3f},"
+            "staminaCurrent:{:.3f},staminaMax:{:.3f},"
+            "level:{:.0f},xpProgress:{:.5f}"
+            "}});",
+            a_state.chargesCurrent,
+            a_state.chargesMax,
+            a_state.chargeProgress,
+            a_state.recovery,
+            a_state.healthCurrent,
+            a_state.healthMax,
+            a_state.magickaCurrent,
+            a_state.magickaMax,
+            a_state.staminaCurrent,
+            a_state.staminaMax,
+            a_state.level,
+            a_state.xpProgress);
 
         g_prisma->Invoke(g_view, script.c_str());
         g_lastState = a_state;
@@ -372,10 +417,29 @@ namespace
         }
 
         HUDState state{};
-        state.current = std::clamp(g_currentCharges->value, 0.0f, 5.0f);
-        state.max = std::clamp(g_maxCharges->value, 0.0f, 5.0f);
-        state.progress = std::clamp(g_rechargeProgress->value, 0.0f, 1.0f);
+        state.chargesCurrent = std::clamp(g_currentCharges->value, 0.0f, 5.0f);
+        state.chargesMax = std::clamp(g_maxCharges->value, 0.0f, 5.0f);
+        state.chargeProgress = std::clamp(g_rechargeProgress->value, 0.0f, 1.0f);
         state.recovery = std::clamp(g_recoveryPercent->value, 0.0f, 95.0f);
+
+        if (player) {
+            state.healthCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kHealth));
+            state.healthMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kHealth));
+            state.magickaCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kMagicka));
+            state.magickaMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kMagicka));
+            state.staminaCurrent = std::max(0.0f, player->GetActorValue(RE::ActorValue::kStamina));
+            state.staminaMax = std::max(1.0f, player->GetPermanentActorValue(RE::ActorValue::kStamina));
+            state.level = static_cast<float>(player->GetLevel());
+
+            if (player->skills && player->skills->data) {
+                const auto xp = std::max(0.0f, player->skills->data->xp);
+                const auto threshold = player->skills->data->levelThreshold;
+                state.xpProgress = threshold > 0.0f ?
+                    std::clamp(xp / threshold, 0.0f, 1.0f) :
+                    0.0f;
+            }
+        }
+
         PushState(state);
     }
 
@@ -441,9 +505,10 @@ namespace
 
         ImGuiMCP::Spacing();
         if (ImGuiMCP::Button("Reset HUD placement")) {
-            g_config.left = 22;
-            g_config.bottom = 112;
+            g_config.left = 574;
+            g_config.bottom = 32;
             g_config.scale = 100;
+            g_config.layoutVersion = 2;
             CommitMenuChange();
         }
 
@@ -570,6 +635,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HelluvaHUD v0.1.0 charge module loaded");
+    SKSE::log::info("HelluvaHUD v0.2.0 core stats module loaded");
     return true;
 }
