@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "PrismaUI_API.h"
+#include "SKSEMenuFramework.h"
 
 using namespace std::chrono_literals;
 
@@ -25,10 +26,8 @@ namespace
     RE::TESGlobal* g_rechargeProgress = nullptr;
     RE::TESGlobal* g_recoveryPercent = nullptr;
 
-    std::filesystem::path g_defaultIniPath;
-    std::filesystem::path g_userIniPath;
-    std::string g_defaultIniPathString;
-    std::string g_userIniPathString;
+    std::filesystem::path g_defaultIniPath{ kDefaultIniRelativePath };
+    std::filesystem::path g_userIniPath{ kUserIniRelativePath };
 
     struct Config
     {
@@ -36,7 +35,6 @@ namespace
         int bottom = 112;
         int scale = 100;
         int pollMs = 50;
-        int menuKey = 68;
     } g_config;
 
     struct HUDState
@@ -49,75 +47,149 @@ namespace
 
     HUDState g_lastState{};
     bool g_hasLastState = false;
-    bool g_settingsOpen = false;
-    bool g_inputRegistered = false;
+    bool g_menuFrameworkRegistered = false;
 
-    void ResolveConfigPaths()
+    std::string Trim(std::string a_value)
     {
-        if (!g_defaultIniPathString.empty() && !g_userIniPathString.empty()) {
-            return;
+        const auto first = a_value.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return {};
         }
-
-        std::array<char, 32768> modulePath{};
-        const auto length = GetModuleFileNameA(nullptr, modulePath.data(), static_cast<DWORD>(modulePath.size()));
-
-        std::filesystem::path gameRoot;
-        if (length > 0 && length < modulePath.size()) {
-            gameRoot = std::filesystem::path(std::string(modulePath.data(), length)).parent_path();
-        } else {
-            gameRoot = std::filesystem::current_path();
-        }
-
-        g_defaultIniPath = gameRoot / kDefaultIniRelativePath;
-        g_userIniPath = gameRoot / kUserIniRelativePath;
-        g_defaultIniPathString = g_defaultIniPath.string();
-        g_userIniPathString = g_userIniPath.string();
+        const auto last = a_value.find_last_not_of(" \t\r\n");
+        return a_value.substr(first, last - first + 1);
     }
 
-    void LoadConfig()
+    void ClampConfig()
     {
-        ResolveConfigPaths();
-
-        g_config.left = static_cast<int>(GetPrivateProfileIntA("HUD", "Left", g_config.left, g_defaultIniPathString.c_str()));
-        g_config.bottom = static_cast<int>(GetPrivateProfileIntA("HUD", "Bottom", g_config.bottom, g_defaultIniPathString.c_str()));
-        g_config.scale = static_cast<int>(GetPrivateProfileIntA("HUD", "Scale", g_config.scale, g_defaultIniPathString.c_str()));
-        g_config.pollMs = static_cast<int>(GetPrivateProfileIntA("HUD", "PollMs", g_config.pollMs, g_defaultIniPathString.c_str()));
-        g_config.menuKey = static_cast<int>(GetPrivateProfileIntA("HUD", "MenuKey", g_config.menuKey, g_defaultIniPathString.c_str()));
-
-        g_config.left = static_cast<int>(GetPrivateProfileIntA("HUD", "Left", g_config.left, g_userIniPathString.c_str()));
-        g_config.bottom = static_cast<int>(GetPrivateProfileIntA("HUD", "Bottom", g_config.bottom, g_userIniPathString.c_str()));
-        g_config.scale = static_cast<int>(GetPrivateProfileIntA("HUD", "Scale", g_config.scale, g_userIniPathString.c_str()));
-        g_config.pollMs = static_cast<int>(GetPrivateProfileIntA("HUD", "PollMs", g_config.pollMs, g_userIniPathString.c_str()));
-        g_config.menuKey = static_cast<int>(GetPrivateProfileIntA("HUD", "MenuKey", g_config.menuKey, g_userIniPathString.c_str()));
-
         g_config.left = std::clamp(g_config.left, 0, 4000);
         g_config.bottom = std::clamp(g_config.bottom, 0, 4000);
         g_config.scale = std::clamp(g_config.scale, 50, 250);
         g_config.pollMs = std::clamp(g_config.pollMs, 33, 250);
-        g_config.menuKey = std::clamp(g_config.menuKey, 0, 255);
-
-        SKSE::log::info("Loaded charge HUD layout Left={} Bottom={} Scale={}%", g_config.left, g_config.bottom, g_config.scale);
     }
 
-    void SaveLayoutConfig()
+    void ApplyIniFile(const std::filesystem::path& a_path)
     {
-        ResolveConfigPaths();
+        std::ifstream input(a_path);
+        if (!input.is_open()) {
+            return;
+        }
+
+        bool inHudSection = false;
+        std::string line;
+        while (std::getline(input, line)) {
+            line = Trim(line);
+            if (line.empty() || line.starts_with(';') || line.starts_with('#')) {
+                continue;
+            }
+
+            if (line.front() == '[' && line.back() == ']') {
+                inHudSection = (Trim(line.substr(1, line.size() - 2)) == "HUD");
+                continue;
+            }
+            if (!inHudSection) {
+                continue;
+            }
+
+            const auto eq = line.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
+
+            const auto key = Trim(line.substr(0, eq));
+            const auto value = Trim(line.substr(eq + 1));
+
+            try {
+                const int number = std::stoi(value);
+                if (key == "Left") {
+                    g_config.left = number;
+                } else if (key == "Bottom") {
+                    g_config.bottom = number;
+                } else if (key == "Scale") {
+                    g_config.scale = number;
+                } else if (key == "PollMs") {
+                    g_config.pollMs = number;
+                }
+            } catch (...) {
+                SKSE::log::warn("Ignoring invalid HUD setting {}={} from {}", key, value, a_path.string());
+            }
+        }
+    }
+
+    void LoadConfig()
+    {
+        g_config = {};
+        ApplyIniFile(g_defaultIniPath);
+        ApplyIniFile(g_userIniPath);
+        ClampConfig();
+
+        SKSE::log::info(
+            "Loaded charge HUD layout Left={} Bottom={} Scale={}%; user config={}",
+            g_config.left,
+            g_config.bottom,
+            g_config.scale,
+            std::filesystem::absolute(g_userIniPath).string());
+    }
+
+    bool SaveLayoutConfig()
+    {
+        ClampConfig();
 
         std::error_code ec;
         std::filesystem::create_directories(g_userIniPath.parent_path(), ec);
         if (ec) {
-            SKSE::log::error("Could not create HUD config directory: {}", ec.message());
+            SKSE::log::error(
+                "Could not create HUD user config directory {}: {}",
+                g_userIniPath.parent_path().string(),
+                ec.message());
+            return false;
+        }
+
+        std::ofstream output(g_userIniPath, std::ios::out | std::ios::trunc);
+        if (!output.is_open()) {
+            SKSE::log::error(
+                "Could not open HUD user config for writing: {}",
+                std::filesystem::absolute(g_userIniPath).string());
+            return false;
+        }
+
+        output
+            << "[HUD]\n"
+            << "; Auto-generated by HE Technique HUD.\n"
+            << "; Under MO2 this file should appear in Overwrite\\SKSE\\Plugins.\n"
+            << "Left=" << g_config.left << "\n"
+            << "Bottom=" << g_config.bottom << "\n"
+            << "Scale=" << g_config.scale << "\n"
+            << "PollMs=" << g_config.pollMs << "\n";
+        output.flush();
+
+        if (!output.good()) {
+            SKSE::log::error(
+                "Failed while writing HUD user config: {}",
+                std::filesystem::absolute(g_userIniPath).string());
+            return false;
+        }
+
+        SKSE::log::info(
+            "Saved HUD settings Left={} Bottom={} Scale={}% to {}",
+            g_config.left,
+            g_config.bottom,
+            g_config.scale,
+            std::filesystem::absolute(g_userIniPath).string());
+        return true;
+    }
+
+    void ApplyLayoutToHUD()
+    {
+        if (!g_prisma || !g_domReady.load() || !g_view || !g_prisma->IsValid(g_view)) {
             return;
         }
 
-        const auto left = std::to_string(g_config.left);
-        const auto bottom = std::to_string(g_config.bottom);
-        const auto scale = std::to_string(g_config.scale);
-
-        WritePrivateProfileStringA("HUD", "Left", left.c_str(), g_userIniPathString.c_str());
-        WritePrivateProfileStringA("HUD", "Bottom", bottom.c_str(), g_userIniPathString.c_str());
-        WritePrivateProfileStringA("HUD", "Scale", scale.c_str(), g_userIniPathString.c_str());
-        WritePrivateProfileStringA(nullptr, nullptr, nullptr, g_userIniPathString.c_str());
+        const auto script = std::format(
+            "window.TechniqueHUD&&window.TechniqueHUD.setLayout({},{},{});",
+            g_config.left,
+            g_config.bottom,
+            g_config.scale);
+        g_prisma->Invoke(g_view, script.c_str());
     }
 
     void ResolveForms()
@@ -201,125 +273,78 @@ namespace
         });
     }
 
-    void CloseSettingsMenu();
-
-    void OnSettingsApply(const char* a_argument)
+    void CommitMenuChange()
     {
-        if (!a_argument) {
-            return;
-        }
-
-        int left = g_config.left;
-        int bottom = g_config.bottom;
-        int scale = g_config.scale;
-        if (std::sscanf(a_argument, "%d|%d|%d", &left, &bottom, &scale) != 3) {
-            return;
-        }
-
-        g_config.left = std::clamp(left, 0, 4000);
-        g_config.bottom = std::clamp(bottom, 0, 4000);
-        g_config.scale = std::clamp(scale, 50, 250);
+        ClampConfig();
+        ApplyLayoutToHUD();
         SaveLayoutConfig();
     }
 
-    void OnSettingsClose(const char*)
+    void __stdcall RenderMenuFrameworkSettings()
     {
-        CloseSettingsMenu();
-    }
+        ImGuiMCP::TextWrapped(
+            "Technique Charges HUD placement. Changes apply immediately and save automatically.");
 
-    void OpenSettingsMenu()
-    {
-        if (!g_prisma || !g_domReady.load() || !g_view || !g_prisma->IsValid(g_view) || g_settingsOpen) {
-            return;
-        }
-        if (g_prisma->HasAnyActiveFocus()) {
-            return;
-        }
+        ImGuiMCP::Spacing();
+        bool changed = false;
 
-        const auto script = std::format(
-            "window.TechniqueHUD&&window.TechniqueHUD.openSettings({},{},{});",
-            g_config.left,
-            g_config.bottom,
-            g_config.scale);
-        g_prisma->Invoke(g_view, script.c_str());
+        ImGuiMCP::SetNextItemWidth(360.0f);
+        changed |= ImGuiMCP::SliderInt("Horizontal position", &g_config.left, 0, 3840, "%d px");
 
-        if (!g_prisma->Focus(g_view, true)) {
-            return;
-        }
-        g_settingsOpen = true;
-    }
+        ImGuiMCP::SetNextItemWidth(360.0f);
+        changed |= ImGuiMCP::SliderInt("Vertical position", &g_config.bottom, 0, 2160, "%d px");
 
-    void CloseSettingsMenu()
-    {
-        if (!g_prisma || !g_view || !g_prisma->IsValid(g_view)) {
-            g_settingsOpen = false;
-            return;
+        ImGuiMCP::SetNextItemWidth(360.0f);
+        changed |= ImGuiMCP::SliderInt("HUD scale", &g_config.scale, 50, 250, "%d%%");
+
+        if (changed) {
+            CommitMenuChange();
         }
 
-        if (g_domReady.load()) {
-            g_prisma->Invoke(g_view, "window.TechniqueHUD&&window.TechniqueHUD.closeSettings();");
-        }
-        if (g_prisma->HasFocus(g_view)) {
-            g_prisma->Unfocus(g_view);
-        }
-        g_settingsOpen = false;
-    }
-
-    void ToggleSettingsMenu()
-    {
-        if (g_settingsOpen) {
-            CloseSettingsMenu();
-        } else {
-            OpenSettingsMenu();
-        }
-    }
-
-    class InputEventSink final : public RE::BSTEventSink<RE::InputEvent*>
-    {
-    public:
-        static InputEventSink* GetSingleton()
-        {
-            static InputEventSink singleton;
-            return std::addressof(singleton);
+        ImGuiMCP::Spacing();
+        if (ImGuiMCP::Button("Reset HUD placement")) {
+            g_config.left = 22;
+            g_config.bottom = 112;
+            g_config.scale = 100;
+            CommitMenuChange();
         }
 
-        RE::BSEventNotifyControl ProcessEvent(
-            RE::InputEvent* const* a_events,
-            RE::BSTEventSource<RE::InputEvent*>*) override
-        {
-            if (!a_events) {
-                return RE::BSEventNotifyControl::kContinue;
+        ImGuiMCP::Separator();
+        if (g_currentCharges && g_maxCharges && g_rechargeProgress) {
+            const int current = std::clamp(static_cast<int>(std::lround(g_currentCharges->value)), 0, 5);
+            const int maximum = std::clamp(static_cast<int>(std::lround(g_maxCharges->value)), 0, 5);
+            const int progress = std::clamp(static_cast<int>(std::lround(g_rechargeProgress->value * 100.0f)), 0, 100);
+            ImGuiMCP::Text("Current charges: %d / %d", current, maximum);
+            if (current < maximum) {
+                ImGuiMCP::Text("Next charge: %d%%", progress);
             }
-
-            for (auto* event = *a_events; event; event = event->next) {
-                if (event->GetEventType() != RE::INPUT_EVENT_TYPE::kButton) {
-                    continue;
-                }
-
-                auto* button = event->AsButtonEvent();
-                if (!button || button->GetDevice() != RE::INPUT_DEVICE::kKeyboard || !button->IsDown()) {
-                    continue;
-                }
-
-                if (static_cast<int>(button->GetIDCode()) == g_config.menuKey) {
-                    ToggleSettingsMenu();
-                    break;
-                }
-            }
-
-            return RE::BSEventNotifyControl::kContinue;
         }
-    };
 
-    void RegisterInputSink()
+        ImGuiMCP::Spacing();
+        ImGuiMCP::TextWrapped(
+            "Saved to Data\\SKSE\\Plugins\\HE_TechniqueHUD.user.ini. "
+            "With Mod Organizer 2 this newly-created file should be written to Overwrite.");
+    }
+
+    void RegisterMenuFramework()
     {
-        if (g_inputRegistered) {
+        if (g_menuFrameworkRegistered) {
             return;
         }
-        if (auto* inputManager = RE::BSInputDeviceManager::GetSingleton()) {
-            inputManager->AddEventSink(InputEventSink::GetSingleton());
-            g_inputRegistered = true;
+
+        if (!SKSEMenuFramework::IsInstalled()) {
+            SKSE::log::warn(
+                "SKSE Menu Framework not installed; charge HUD will work but its settings page is unavailable.");
+            return;
         }
+
+        SKSEMenuFramework::SetSection("HE Technique HUD");
+        SKSEMenuFramework::AddSectionItem("HUD Settings", RenderMenuFrameworkSettings);
+        g_menuFrameworkRegistered = true;
+
+        SKSE::log::info(
+            "Registered HE Technique HUD settings with SKSE Menu Framework v{:.2f}",
+            SKSEMenuFramework::GetMenuFrameworkVersion());
     }
 
     void CreateHUDView()
@@ -333,13 +358,7 @@ namespace
         g_view = g_prisma->CreateView(kViewPath, [](PrismaView a_view) {
             g_view = a_view;
             g_domReady.store(true);
-
-            const auto layout = std::format(
-                "window.TechniqueHUD&&window.TechniqueHUD.setLayout({},{},{});",
-                g_config.left,
-                g_config.bottom,
-                g_config.scale);
-            g_prisma->Invoke(g_view, layout.c_str());
+            ApplyLayoutToHUD();
             g_prisma->SetOrder(g_view, 500);
             g_prisma->Show(g_view);
             SKSE::log::info("Technique Charge HUD DOM ready");
@@ -348,11 +367,7 @@ namespace
         if (!g_view || !g_prisma->IsValid(g_view)) {
             SKSE::log::error("PrismaUI CreateView failed for {}", kViewPath);
             g_view = 0;
-            return;
         }
-
-        g_prisma->RegisterJSListener(g_view, "HEHUDApply", OnSettingsApply);
-        g_prisma->RegisterJSListener(g_view, "HEHUDClose", OnSettingsClose);
     }
 
     void MessageHandler(SKSE::MessagingInterface::Message* a_message)
@@ -362,23 +377,20 @@ namespace
         }
 
         switch (a_message->type) {
-        case SKSE::MessagingInterface::kInputLoaded:
-            LoadConfig();
-            RegisterInputSink();
-            break;
         case SKSE::MessagingInterface::kDataLoaded:
             LoadConfig();
             ResolveForms();
             CreateHUDView();
+            RegisterMenuFramework();
             StartPolling();
             break;
+
         case SKSE::MessagingInterface::kPostLoadGame:
         case SKSE::MessagingInterface::kNewGame:
             g_hasLastState = false;
-            if (g_settingsOpen) {
-                CloseSettingsMenu();
-            }
+            ApplyLayoutToHUD();
             break;
+
         default:
             break;
         }
@@ -404,6 +416,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique HUD v5.7.7 charge lock/recharge states loaded");
+    SKSE::log::info("HE Technique HUD v5.7.8 SKSE Menu Framework settings loaded");
     return true;
 }
