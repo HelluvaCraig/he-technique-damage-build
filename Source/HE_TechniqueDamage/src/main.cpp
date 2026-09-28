@@ -156,6 +156,17 @@ namespace
     std::chrono::steady_clock::time_point g_lastChargeSignalTime{};
     RE::FormID g_lastChargeSignalSpell = 0;
 
+    // Physical Technique Stones share AABL's attack channel, which normally
+    // spends Stamina. Stone Techniques are charge-only, so snapshot Stamina on
+    // the user's V press and refund only after a rank charge signal confirms
+    // that a physical Stone Technique actually activated. Built-in Additional
+    // Attacks never emit that rank signal and therefore keep their Stamina cost.
+    constexpr std::uint32_t kTechniqueInputKeyCode = 0x2F;  // keyboard V scan code
+    constexpr float kMaxPhysicalTechniqueStaminaRefund = 250.0f;
+    bool g_physicalStaminaRefundArmed = false;
+    float g_physicalStaminaSnapshot = 0.0f;
+    std::chrono::steady_clock::time_point g_physicalStaminaSnapshotTime{};
+
     struct RadiantFinisherEffectRef
     {
         RE::Effect* effect{ nullptr };
@@ -259,6 +270,74 @@ namespace
             }
         }
         return nullptr;
+    }
+
+    void ArmPhysicalTechniqueStaminaRefund(RE::Actor* a_actor)
+    {
+        if (!a_actor || !GetEquippedPhysicalStone(a_actor)) {
+            g_physicalStaminaRefundArmed = false;
+            return;
+        }
+
+        const float stamina = a_actor->GetActorValue(RE::ActorValue::kStamina);
+        if (!std::isfinite(stamina)) {
+            g_physicalStaminaRefundArmed = false;
+            return;
+        }
+
+        g_physicalStaminaSnapshot = stamina;
+        g_physicalStaminaSnapshotTime = std::chrono::steady_clock::now();
+        g_physicalStaminaRefundArmed = true;
+        SKSE::log::info("[STONE STAMINA ARM] snapshot={:.2f}", stamina);
+    }
+
+    void QueuePhysicalTechniqueStaminaRefund(RE::Actor* a_actor)
+    {
+        if (!a_actor || !g_physicalStaminaRefundArmed || !GetEquippedPhysicalStone(a_actor)) {
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        const auto ageMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - g_physicalStaminaSnapshotTime).count();
+        if (ageMs < 0 || ageMs > 2000) {
+            g_physicalStaminaRefundArmed = false;
+            SKSE::log::info("[STONE STAMINA REFUND] expired snapshot age={}ms", ageMs);
+            return;
+        }
+
+        const float snapshot = g_physicalStaminaSnapshot;
+        g_physicalStaminaRefundArmed = false;
+
+        if (auto* tasks = SKSE::GetTaskInterface()) {
+            tasks->AddTask([snapshot]() {
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                if (!player) {
+                    return;
+                }
+
+                const float current = player->GetActorValue(RE::ActorValue::kStamina);
+                if (!std::isfinite(current) || !std::isfinite(snapshot)) {
+                    return;
+                }
+
+                const float refund = snapshot - current;
+                if (refund > 0.01f && refund <= kMaxPhysicalTechniqueStaminaRefund) {
+                    player->AsActorValueOwner()->RestoreActorValue(RE::ActorValue::kStamina, refund);
+                    SKSE::log::info(
+                        "[STONE STAMINA REFUND] before={:.2f} snapshot={:.2f} refunded={:.2f}",
+                        current,
+                        snapshot,
+                        refund);
+                } else {
+                    SKSE::log::info(
+                        "[STONE STAMINA REFUND] no refund current={:.2f} snapshot={:.2f} delta={:.2f}",
+                        current,
+                        snapshot,
+                        refund);
+                }
+            });
+        }
     }
 
     const MagicTechniqueDefinition* GetEquippedMagicStone(RE::Actor* a_actor)
@@ -1646,15 +1725,24 @@ namespace
     bool HandleTechniqueChargeEffect(RE::Actor* a_actor, RE::FormID a_effectFormID)
     {
         if (g_adeptChargeEffect && a_effectFormID == g_adeptChargeEffect->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 1, a_effectFormID);
+            const bool spent = SpendTechniqueCharges(a_actor, 1, a_effectFormID);
+            if (spent && GetEquippedPhysicalStone(a_actor)) {
+                QueuePhysicalTechniqueStaminaRefund(a_actor);
+            }
             return true;
         }
         if (g_expertChargeEffect && a_effectFormID == g_expertChargeEffect->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 2, a_effectFormID);
+            const bool spent = SpendTechniqueCharges(a_actor, 2, a_effectFormID);
+            if (spent && GetEquippedPhysicalStone(a_actor)) {
+                QueuePhysicalTechniqueStaminaRefund(a_actor);
+            }
             return true;
         }
         if (g_masterChargeEffect && a_effectFormID == g_masterChargeEffect->GetFormID()) {
-            SpendTechniqueCharges(a_actor, 3, a_effectFormID);
+            const bool spent = SpendTechniqueCharges(a_actor, 3, a_effectFormID);
+            if (spent && GetEquippedPhysicalStone(a_actor)) {
+                QueuePhysicalTechniqueStaminaRefund(a_actor);
+            }
             return true;
         }
         return false;
@@ -1675,6 +1763,18 @@ namespace
                 // Safe during title/loading screens: Update exits until the
                 // player has a valid parent cell.
                 UpdateTechniqueChargeState(player);
+
+                for (const RE::InputEvent* input = *a_events; input; input = input->next) {
+                    const auto* button = input->AsButtonEvent();
+                    if (!button || !button->IsDown()) {
+                        continue;
+                    }
+                    if (button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
+                        button->GetIDCode() == kTechniqueInputKeyCode) {
+                        ArmPhysicalTechniqueStaminaRefund(player);
+                        break;
+                    }
+                }
             }
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -1739,6 +1839,9 @@ namespace
         g_chargeClockPaused = false;
         g_lastChargeSignalSpell = 0;
         g_lastChargeSignalTime = {};
+        g_physicalStaminaRefundArmed = false;
+        g_physicalStaminaSnapshot = 0.0f;
+        g_physicalStaminaSnapshotTime = {};
     }
 
     void SaveTechniqueChargeState(SKSE::SerializationInterface* a_intfc)
@@ -2493,6 +2596,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.2 Technique Charges global-state hotfix loaded");
+    SKSE::log::info("HE Technique Damage v0.6.3 Charge-only physical Stamina refund loaded");
     return true;
 }
