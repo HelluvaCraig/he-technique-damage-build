@@ -1461,10 +1461,10 @@ namespace
         }
 
         const auto level = a_actor->GetLevel();
-        if (level >= 50) {
+        if (level >= 40) {
             return 5;
         }
-        if (level >= 35) {
+        if (level >= 30) {
             return 4;
         }
         if (level >= 20) {
@@ -2596,6 +2596,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.3 Charge-only physical Stamina refund loaded");
+    SKSE::log::info("HE Technique Damage v0.6.4 Charge progression 1/10/20/30/40 loaded");
     return true;
 }
