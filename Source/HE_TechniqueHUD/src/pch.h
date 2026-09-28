@@ -13,7 +13,9 @@
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
