@@ -48,7 +48,7 @@ namespace
         int scale = 100;
         int pollMs = 50;
         bool combatOnly = false;
-        int layoutVersion = 5;
+        int layoutVersion = 6;
 
         ModuleLayout healthText{ 0, 0, 100, 20, true };
         ModuleLayout healthBar{ 0, 0, 100, 10, true };
@@ -446,14 +446,14 @@ namespace
 
         ClampConfig();
 
-        // v0.3.4 calibration: all normal HUD sections can be hidden, and
+        // v0.3.7 native-size calibration: reset old offsets for the original-size artwork; all normal HUD sections can be hidden, and
         // each Level layer is independently movable/scaleable/layered.
         if (needsCoreLayoutMigration || g_config.layoutVersion < 2) {
             g_config.left = 574;
             g_config.bottom = 32;
             migrated = true;
         }
-        if (g_config.layoutVersion < 5) {
+        if (g_config.layoutVersion < 6) {
             g_config.healthText = { 0, 0, 100, 20, true };
             g_config.healthBar = { 0, 0, 100, 10, true };
             g_config.magickaText = { 0, 0, 100, 20, true };
@@ -465,7 +465,7 @@ namespace
             g_config.levelAvailable = { 0, 0, 100, 14, true };
             g_config.levelPlate = { 0, 0, 100, 20, true };
             g_config.levelNumber = { 0, 0, 100, 30, true };
-            g_config.layoutVersion = 5;
+            g_config.layoutVersion = 6;
             migrated = true;
         }
 
@@ -479,7 +479,7 @@ namespace
             std::filesystem::absolute(g_userIniPath).string());
 
         if (migrated) {
-            SKSE::log::info("Writing migrated HelluvaHUD v0.3.4 level-layer calibration layout");
+            SKSE::log::info("Writing migrated HelluvaHUD v0.3.7 native-size PNG calibration layout");
             SaveConfig();
         }
     }
@@ -929,6 +929,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HelluvaHUD v0.3.4 level-layer calibration HUD loaded");
+    SKSE::log::info("HelluvaHUD v0.3.7 native-size PNG calibration HUD loaded");
     return true;
 }
