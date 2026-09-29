@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(HelluvaHUD VERSION 0.3.7 LANGUAGES CXX)
+project(HelluvaHUD VERSION 0.3.8 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 
