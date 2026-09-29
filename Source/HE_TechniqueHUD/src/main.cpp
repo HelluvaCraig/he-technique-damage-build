@@ -698,7 +698,6 @@ namespace
             }
 
             state.level = static_cast<float>(player->GetLevel());
-            state.levelUpAvailable = player->GetGameStatsData().perkCount > 0 ? 1.0f : 0.0f;
 
             auto* skills = player->GetPlayerRuntimeData().skills;
             if (skills && skills->data) {
@@ -707,6 +706,12 @@ namespace
                 state.xpProgress = threshold > 0.0f ?
                     std::clamp(xp / threshold, 0.0f, 1.0f) :
                     0.0f;
+
+                // Skyrim marks a level-up as ready when the character XP total
+                // reaches the current level threshold. PerkCount is only the
+                // later unspent-perk state and therefore misses the actual
+                // "Level Up Available" window.
+                state.levelUpAvailable = threshold > 0.0f && xp >= threshold ? 1.0f : 0.0f;
             }
         }
 
@@ -929,6 +934,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HelluvaHUD v0.3.7 native-size PNG calibration HUD loaded");
+    SKSE::log::info("HelluvaHUD v0.3.8 level-up trigger fix loaded");
     return true;
 }
