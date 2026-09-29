@@ -589,7 +589,7 @@ namespace
     void __stdcall RenderMenuFrameworkSettings()
     {
         ImGuiMCP::TextWrapped(
-            "HelluvaHUD placement and visibility. Changes apply immediately and save automatically.");
+            "HelluvaHUD modular SVG layout. Changes apply immediately and save automatically.");
 
         ImGuiMCP::Spacing();
         bool changed = false;
@@ -607,26 +607,54 @@ namespace
         }
 
         ImGuiMCP::Spacing();
-
+        ImGuiMCP::Text("Whole HUD");
         ImGuiMCP::SetNextItemWidth(360.0f);
         changed |= ImGuiMCP::SliderInt("Horizontal position", &g_config.left, 0, 3840, "%d px");
-
         ImGuiMCP::SetNextItemWidth(360.0f);
         changed |= ImGuiMCP::SliderInt("Vertical position", &g_config.bottom, 0, 2160, "%d px");
-
         ImGuiMCP::SetNextItemWidth(360.0f);
         changed |= ImGuiMCP::SliderInt("HUD scale", &g_config.scale, 50, 250, "%d%%");
+
+        auto moduleControls = [&](const char* a_name, ModuleLayout& a_module) {
+            ImGuiMCP::Separator();
+            ImGuiMCP::Text("%s", a_name);
+
+            std::string xLabel = std::string("X offset##") + a_name;
+            std::string yLabel = std::string("Y offset##") + a_name;
+            std::string scaleLabel = std::string("Scale##") + a_name;
+            std::string layerLabel = std::string("Layer##") + a_name;
+
+            ImGuiMCP::SetNextItemWidth(360.0f);
+            changed |= ImGuiMCP::SliderInt(xLabel.c_str(), &a_module.x, -800, 800, "%d px");
+            ImGuiMCP::SetNextItemWidth(360.0f);
+            changed |= ImGuiMCP::SliderInt(yLabel.c_str(), &a_module.y, -800, 800, "%d px");
+            ImGuiMCP::SetNextItemWidth(360.0f);
+            changed |= ImGuiMCP::SliderInt(scaleLabel.c_str(), &a_module.scale, 50, 200, "%d%%");
+            ImGuiMCP::SetNextItemWidth(360.0f);
+            changed |= ImGuiMCP::SliderInt(layerLabel.c_str(), &a_module.layer, 0, 100, "%d");
+        };
+
+        moduleControls("Health + Stamina", g_config.health);
+        moduleControls("Level", g_config.level);
+        moduleControls("Magicka", g_config.magicka);
+        moduleControls("Charges", g_config.charges);
 
         if (changed) {
             CommitMenuChange();
         }
 
         ImGuiMCP::Spacing();
-        if (ImGuiMCP::Button("Reset HUD placement")) {
+        ImGuiMCP::Separator();
+
+        if (ImGuiMCP::Button("Reset all HUD placement")) {
             g_config.left = 574;
             g_config.bottom = 32;
             g_config.scale = 100;
-            g_config.layoutVersion = 2;
+            g_config.health = { 0, 0, 100, 10 };
+            g_config.level = { 0, 0, 100, 20 };
+            g_config.magicka = { 0, 0, 100, 10 };
+            g_config.charges = { 0, 0, 100, 12 };
+            g_config.layoutVersion = 3;
             CommitMenuChange();
         }
 
@@ -645,8 +673,8 @@ namespace
 
         ImGuiMCP::Spacing();
         ImGuiMCP::TextWrapped(
-            "Saved to Data\\SKSE\\Plugins\\HelluvaHUD.user.ini. "
-            "With Mod Organizer 2 this newly-created file should be written to Overwrite.");
+            "Layer controls the overlap order. Higher numbers render in front. "
+            "Settings save to Data\\SKSE\\Plugins\\HelluvaHUD.user.ini and should appear in MO2 Overwrite.");
     }
 
     void RegisterMenuFramework()
