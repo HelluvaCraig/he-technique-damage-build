@@ -69,5 +69,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HelluvaHUD-v0.3.3-calibration
+          name: HelluvaHUD-v0.3.4-layer-calibration
           path: artifact
