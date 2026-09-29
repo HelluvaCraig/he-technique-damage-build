@@ -38,6 +38,7 @@ namespace
         int y = 0;
         int scale = 100;
         int layer = 10;
+        bool visible = true;
     };
 
     struct Config
@@ -47,15 +48,20 @@ namespace
         int scale = 100;
         int pollMs = 50;
         bool combatOnly = false;
-        int layoutVersion = 4;
+        int layoutVersion = 5;
 
-        ModuleLayout healthText{ 0, 0, 100, 20 };
-        ModuleLayout healthBar{ 0, 0, 100, 10 };
-        ModuleLayout magickaText{ 0, 0, 100, 20 };
-        ModuleLayout magickaBar{ 0, 0, 100, 10 };
-        ModuleLayout stamina{ 0, 0, 100, 10 };
-        ModuleLayout charges{ 0, 0, 100, 12 };
-        ModuleLayout level{ 0, 0, 100, 30 };
+        ModuleLayout healthText{ 0, 0, 100, 20, true };
+        ModuleLayout healthBar{ 0, 0, 100, 10, true };
+        ModuleLayout magickaText{ 0, 0, 100, 20, true };
+        ModuleLayout magickaBar{ 0, 0, 100, 10, true };
+        ModuleLayout stamina{ 0, 0, 100, 10, true };
+        ModuleLayout charges{ 0, 0, 100, 12, true };
+
+        ModuleLayout levelBlank{ 0, 0, 100, 10, true };
+        ModuleLayout levelFill{ 0, 0, 100, 12, true };
+        ModuleLayout levelAvailable{ 0, 0, 100, 14, true };
+        ModuleLayout levelPlate{ 0, 0, 100, 20, true };
+        ModuleLayout levelNumber{ 0, 0, 100, 30, true };
     } g_config;
 
     struct HUDState
@@ -147,7 +153,11 @@ namespace
         clampModule(g_config.magickaBar);
         clampModule(g_config.stamina);
         clampModule(g_config.charges);
-        clampModule(g_config.level);
+        clampModule(g_config.levelBlank);
+        clampModule(g_config.levelFill);
+        clampModule(g_config.levelAvailable);
+        clampModule(g_config.levelPlate);
+        clampModule(g_config.levelNumber);
     }
 
     void ApplyIniFile(const std::filesystem::path& a_path)
@@ -202,6 +212,8 @@ namespace
                     g_config.healthText.scale = std::stoi(value);
                 } else if (key == "HealthTextLayer") {
                     g_config.healthText.layer = std::stoi(value);
+                } else if (key == "HealthTextVisible") {
+                    g_config.healthText.visible = ParseBool(value, g_config.healthText.visible);
                 } else if (key == "HealthBarX") {
                     g_config.healthBar.x = std::stoi(value);
                 } else if (key == "HealthBarY") {
@@ -210,6 +222,8 @@ namespace
                     g_config.healthBar.scale = std::stoi(value);
                 } else if (key == "HealthBarLayer") {
                     g_config.healthBar.layer = std::stoi(value);
+                } else if (key == "HealthBarVisible") {
+                    g_config.healthBar.visible = ParseBool(value, g_config.healthBar.visible);
                 } else if (key == "MagickaTextX") {
                     g_config.magickaText.x = std::stoi(value);
                 } else if (key == "MagickaTextY") {
@@ -218,6 +232,8 @@ namespace
                     g_config.magickaText.scale = std::stoi(value);
                 } else if (key == "MagickaTextLayer") {
                     g_config.magickaText.layer = std::stoi(value);
+                } else if (key == "MagickaTextVisible") {
+                    g_config.magickaText.visible = ParseBool(value, g_config.magickaText.visible);
                 } else if (key == "MagickaBarX") {
                     g_config.magickaBar.x = std::stoi(value);
                 } else if (key == "MagickaBarY") {
@@ -226,6 +242,8 @@ namespace
                     g_config.magickaBar.scale = std::stoi(value);
                 } else if (key == "MagickaBarLayer") {
                     g_config.magickaBar.layer = std::stoi(value);
+                } else if (key == "MagickaBarVisible") {
+                    g_config.magickaBar.visible = ParseBool(value, g_config.magickaBar.visible);
                 } else if (key == "StaminaX") {
                     g_config.stamina.x = std::stoi(value);
                 } else if (key == "StaminaY") {
@@ -234,6 +252,8 @@ namespace
                     g_config.stamina.scale = std::stoi(value);
                 } else if (key == "StaminaLayer") {
                     g_config.stamina.layer = std::stoi(value);
+                } else if (key == "StaminaVisible") {
+                    g_config.stamina.visible = ParseBool(value, g_config.stamina.visible);
                 } else if (key == "ChargesX") {
                     g_config.charges.x = std::stoi(value);
                 } else if (key == "ChargesY") {
@@ -242,14 +262,58 @@ namespace
                     g_config.charges.scale = std::stoi(value);
                 } else if (key == "ChargesLayer") {
                     g_config.charges.layer = std::stoi(value);
-                } else if (key == "LevelX") {
-                    g_config.level.x = std::stoi(value);
-                } else if (key == "LevelY") {
-                    g_config.level.y = std::stoi(value);
-                } else if (key == "LevelScale") {
-                    g_config.level.scale = std::stoi(value);
-                } else if (key == "LevelLayer") {
-                    g_config.level.layer = std::stoi(value);
+                } else if (key == "ChargesVisible") {
+                    g_config.charges.visible = ParseBool(value, g_config.charges.visible);
+                } else if (key == "LevelBlankX") {
+                    g_config.levelBlank.x = std::stoi(value);
+                } else if (key == "LevelBlankY") {
+                    g_config.levelBlank.y = std::stoi(value);
+                } else if (key == "LevelBlankScale") {
+                    g_config.levelBlank.scale = std::stoi(value);
+                } else if (key == "LevelBlankLayer") {
+                    g_config.levelBlank.layer = std::stoi(value);
+                } else if (key == "LevelBlankVisible") {
+                    g_config.levelBlank.visible = ParseBool(value, g_config.levelBlank.visible);
+                } else if (key == "LevelFillX") {
+                    g_config.levelFill.x = std::stoi(value);
+                } else if (key == "LevelFillY") {
+                    g_config.levelFill.y = std::stoi(value);
+                } else if (key == "LevelFillScale") {
+                    g_config.levelFill.scale = std::stoi(value);
+                } else if (key == "LevelFillLayer") {
+                    g_config.levelFill.layer = std::stoi(value);
+                } else if (key == "LevelFillVisible") {
+                    g_config.levelFill.visible = ParseBool(value, g_config.levelFill.visible);
+                } else if (key == "LevelAvailableX") {
+                    g_config.levelAvailable.x = std::stoi(value);
+                } else if (key == "LevelAvailableY") {
+                    g_config.levelAvailable.y = std::stoi(value);
+                } else if (key == "LevelAvailableScale") {
+                    g_config.levelAvailable.scale = std::stoi(value);
+                } else if (key == "LevelAvailableLayer") {
+                    g_config.levelAvailable.layer = std::stoi(value);
+                } else if (key == "LevelAvailableVisible") {
+                    g_config.levelAvailable.visible = ParseBool(value, g_config.levelAvailable.visible);
+                } else if (key == "LevelPlateX") {
+                    g_config.levelPlate.x = std::stoi(value);
+                } else if (key == "LevelPlateY") {
+                    g_config.levelPlate.y = std::stoi(value);
+                } else if (key == "LevelPlateScale") {
+                    g_config.levelPlate.scale = std::stoi(value);
+                } else if (key == "LevelPlateLayer") {
+                    g_config.levelPlate.layer = std::stoi(value);
+                } else if (key == "LevelPlateVisible") {
+                    g_config.levelPlate.visible = ParseBool(value, g_config.levelPlate.visible);
+                } else if (key == "LevelNumberX") {
+                    g_config.levelNumber.x = std::stoi(value);
+                } else if (key == "LevelNumberY") {
+                    g_config.levelNumber.y = std::stoi(value);
+                } else if (key == "LevelNumberScale") {
+                    g_config.levelNumber.scale = std::stoi(value);
+                } else if (key == "LevelNumberLayer") {
+                    g_config.levelNumber.layer = std::stoi(value);
+                } else if (key == "LevelNumberVisible") {
+                    g_config.levelNumber.visible = ParseBool(value, g_config.levelNumber.visible);
                 }
             } catch (...) {
                 SKSE::log::warn("Ignoring invalid HelluvaHUD setting {}={} from {}", key, value, a_path.string());
@@ -293,30 +357,57 @@ namespace
             << "HealthTextY=" << g_config.healthText.y << "\n"
             << "HealthTextScale=" << g_config.healthText.scale << "\n"
             << "HealthTextLayer=" << g_config.healthText.layer << "\n"
+            << "HealthTextVisible=" << (g_config.healthText.visible ? 1 : 0) << "\n"
             << "HealthBarX=" << g_config.healthBar.x << "\n"
             << "HealthBarY=" << g_config.healthBar.y << "\n"
             << "HealthBarScale=" << g_config.healthBar.scale << "\n"
             << "HealthBarLayer=" << g_config.healthBar.layer << "\n"
+            << "HealthBarVisible=" << (g_config.healthBar.visible ? 1 : 0) << "\n"
             << "MagickaTextX=" << g_config.magickaText.x << "\n"
             << "MagickaTextY=" << g_config.magickaText.y << "\n"
             << "MagickaTextScale=" << g_config.magickaText.scale << "\n"
             << "MagickaTextLayer=" << g_config.magickaText.layer << "\n"
+            << "MagickaTextVisible=" << (g_config.magickaText.visible ? 1 : 0) << "\n"
             << "MagickaBarX=" << g_config.magickaBar.x << "\n"
             << "MagickaBarY=" << g_config.magickaBar.y << "\n"
             << "MagickaBarScale=" << g_config.magickaBar.scale << "\n"
             << "MagickaBarLayer=" << g_config.magickaBar.layer << "\n"
+            << "MagickaBarVisible=" << (g_config.magickaBar.visible ? 1 : 0) << "\n"
             << "StaminaX=" << g_config.stamina.x << "\n"
             << "StaminaY=" << g_config.stamina.y << "\n"
             << "StaminaScale=" << g_config.stamina.scale << "\n"
             << "StaminaLayer=" << g_config.stamina.layer << "\n"
+            << "StaminaVisible=" << (g_config.stamina.visible ? 1 : 0) << "\n"
             << "ChargesX=" << g_config.charges.x << "\n"
             << "ChargesY=" << g_config.charges.y << "\n"
             << "ChargesScale=" << g_config.charges.scale << "\n"
             << "ChargesLayer=" << g_config.charges.layer << "\n"
-            << "LevelX=" << g_config.level.x << "\n"
-            << "LevelY=" << g_config.level.y << "\n"
-            << "LevelScale=" << g_config.level.scale << "\n"
-            << "LevelLayer=" << g_config.level.layer << "\n";
+            << "ChargesVisible=" << (g_config.charges.visible ? 1 : 0) << "\n"
+            << "LevelBlankX=" << g_config.levelBlank.x << "\n"
+            << "LevelBlankY=" << g_config.levelBlank.y << "\n"
+            << "LevelBlankScale=" << g_config.levelBlank.scale << "\n"
+            << "LevelBlankLayer=" << g_config.levelBlank.layer << "\n"
+            << "LevelBlankVisible=" << (g_config.levelBlank.visible ? 1 : 0) << "\n"
+            << "LevelFillX=" << g_config.levelFill.x << "\n"
+            << "LevelFillY=" << g_config.levelFill.y << "\n"
+            << "LevelFillScale=" << g_config.levelFill.scale << "\n"
+            << "LevelFillLayer=" << g_config.levelFill.layer << "\n"
+            << "LevelFillVisible=" << (g_config.levelFill.visible ? 1 : 0) << "\n"
+            << "LevelAvailableX=" << g_config.levelAvailable.x << "\n"
+            << "LevelAvailableY=" << g_config.levelAvailable.y << "\n"
+            << "LevelAvailableScale=" << g_config.levelAvailable.scale << "\n"
+            << "LevelAvailableLayer=" << g_config.levelAvailable.layer << "\n"
+            << "LevelAvailableVisible=" << (g_config.levelAvailable.visible ? 1 : 0) << "\n"
+            << "LevelPlateX=" << g_config.levelPlate.x << "\n"
+            << "LevelPlateY=" << g_config.levelPlate.y << "\n"
+            << "LevelPlateScale=" << g_config.levelPlate.scale << "\n"
+            << "LevelPlateLayer=" << g_config.levelPlate.layer << "\n"
+            << "LevelPlateVisible=" << (g_config.levelPlate.visible ? 1 : 0) << "\n"
+            << "LevelNumberX=" << g_config.levelNumber.x << "\n"
+            << "LevelNumberY=" << g_config.levelNumber.y << "\n"
+            << "LevelNumberScale=" << g_config.levelNumber.scale << "\n"
+            << "LevelNumberLayer=" << g_config.levelNumber.layer << "\n"
+            << "LevelNumberVisible=" << (g_config.levelNumber.visible ? 1 : 0) << "\n";
         output.flush();
 
         if (!output.good()) {
@@ -355,22 +446,26 @@ namespace
 
         ClampConfig();
 
-        // v0.3.3 calibration layout: split the HUD into seven independently
-        // movable pieces so the final Figma composition can be positioned in-game.
+        // v0.3.4 calibration: all normal HUD sections can be hidden, and
+        // each Level layer is independently movable/scaleable/layered.
         if (needsCoreLayoutMigration || g_config.layoutVersion < 2) {
             g_config.left = 574;
             g_config.bottom = 32;
             migrated = true;
         }
-        if (g_config.layoutVersion < 4) {
-            g_config.healthText = { 0, 0, 100, 20 };
-            g_config.healthBar = { 0, 0, 100, 10 };
-            g_config.magickaText = { 0, 0, 100, 20 };
-            g_config.magickaBar = { 0, 0, 100, 10 };
-            g_config.stamina = { 0, 0, 100, 10 };
-            g_config.charges = { 0, 0, 100, 12 };
-            g_config.level = { 0, 0, 100, 30 };
-            g_config.layoutVersion = 4;
+        if (g_config.layoutVersion < 5) {
+            g_config.healthText = { 0, 0, 100, 20, true };
+            g_config.healthBar = { 0, 0, 100, 10, true };
+            g_config.magickaText = { 0, 0, 100, 20, true };
+            g_config.magickaBar = { 0, 0, 100, 10, true };
+            g_config.stamina = { 0, 0, 100, 10, true };
+            g_config.charges = { 0, 0, 100, 12, true };
+            g_config.levelBlank = { 0, 0, 100, 10, true };
+            g_config.levelFill = { 0, 0, 100, 12, true };
+            g_config.levelAvailable = { 0, 0, 100, 14, true };
+            g_config.levelPlate = { 0, 0, 100, 20, true };
+            g_config.levelNumber = { 0, 0, 100, 30, true };
+            g_config.layoutVersion = 5;
             migrated = true;
         }
 
@@ -384,7 +479,7 @@ namespace
             std::filesystem::absolute(g_userIniPath).string());
 
         if (migrated) {
-            SKSE::log::info("Writing migrated HelluvaHUD v0.3.3 seven-module calibration layout");
+            SKSE::log::info("Writing migrated HelluvaHUD v0.3.4 level-layer calibration layout");
             SaveConfig();
         }
     }
@@ -398,22 +493,30 @@ namespace
         const auto script = std::format(
             "window.HelluvaHUD&&window.HelluvaHUD.setLayout({{"
             "left:{},bottom:{},scale:{},"
-            "healthText:{{x:{},y:{},scale:{},layer:{}}},"
-            "healthBar:{{x:{},y:{},scale:{},layer:{}}},"
-            "magickaText:{{x:{},y:{},scale:{},layer:{}}},"
-            "magickaBar:{{x:{},y:{},scale:{},layer:{}}},"
-            "stamina:{{x:{},y:{},scale:{},layer:{}}},"
-            "charges:{{x:{},y:{},scale:{},layer:{}}},"
-            "level:{{x:{},y:{},scale:{},layer:{}}}"
+            "healthText:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "healthBar:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "magickaText:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "magickaBar:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "stamina:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "charges:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "levelBlank:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "levelFill:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "levelAvailable:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "levelPlate:{{x:{},y:{},scale:{},layer:{},visible:{}}},"
+            "levelNumber:{{x:{},y:{},scale:{},layer:{},visible:{}}}"
             "}});",
             g_config.left, g_config.bottom, g_config.scale,
-            g_config.healthText.x, g_config.healthText.y, g_config.healthText.scale, g_config.healthText.layer,
-            g_config.healthBar.x, g_config.healthBar.y, g_config.healthBar.scale, g_config.healthBar.layer,
-            g_config.magickaText.x, g_config.magickaText.y, g_config.magickaText.scale, g_config.magickaText.layer,
-            g_config.magickaBar.x, g_config.magickaBar.y, g_config.magickaBar.scale, g_config.magickaBar.layer,
-            g_config.stamina.x, g_config.stamina.y, g_config.stamina.scale, g_config.stamina.layer,
-            g_config.charges.x, g_config.charges.y, g_config.charges.scale, g_config.charges.layer,
-            g_config.level.x, g_config.level.y, g_config.level.scale, g_config.level.layer);
+            g_config.healthText.x, g_config.healthText.y, g_config.healthText.scale, g_config.healthText.layer, g_config.healthText.visible ? "true" : "false",
+            g_config.healthBar.x, g_config.healthBar.y, g_config.healthBar.scale, g_config.healthBar.layer, g_config.healthBar.visible ? "true" : "false",
+            g_config.magickaText.x, g_config.magickaText.y, g_config.magickaText.scale, g_config.magickaText.layer, g_config.magickaText.visible ? "true" : "false",
+            g_config.magickaBar.x, g_config.magickaBar.y, g_config.magickaBar.scale, g_config.magickaBar.layer, g_config.magickaBar.visible ? "true" : "false",
+            g_config.stamina.x, g_config.stamina.y, g_config.stamina.scale, g_config.stamina.layer, g_config.stamina.visible ? "true" : "false",
+            g_config.charges.x, g_config.charges.y, g_config.charges.scale, g_config.charges.layer, g_config.charges.visible ? "true" : "false",
+            g_config.levelBlank.x, g_config.levelBlank.y, g_config.levelBlank.scale, g_config.levelBlank.layer, g_config.levelBlank.visible ? "true" : "false",
+            g_config.levelFill.x, g_config.levelFill.y, g_config.levelFill.scale, g_config.levelFill.layer, g_config.levelFill.visible ? "true" : "false",
+            g_config.levelAvailable.x, g_config.levelAvailable.y, g_config.levelAvailable.scale, g_config.levelAvailable.layer, g_config.levelAvailable.visible ? "true" : "false",
+            g_config.levelPlate.x, g_config.levelPlate.y, g_config.levelPlate.scale, g_config.levelPlate.layer, g_config.levelPlate.visible ? "true" : "false",
+            g_config.levelNumber.x, g_config.levelNumber.y, g_config.levelNumber.scale, g_config.levelNumber.layer, g_config.levelNumber.visible ? "true" : "false");
         g_prisma->Invoke(g_view, script.c_str());
     }
 
@@ -638,7 +741,7 @@ namespace
     void __stdcall RenderMenuFrameworkSettings()
     {
         ImGuiMCP::TextWrapped(
-            "HelluvaHUD placement calibration. Move each HUD section independently; changes save immediately.");
+            "HelluvaHUD placement calibration. Every visual section can be moved, scaled, layered or hidden.");
 
         ImGuiMCP::Spacing();
         bool changed = false;
@@ -658,11 +761,13 @@ namespace
             ImGuiMCP::Separator();
             ImGuiMCP::Text("%s", a_name);
 
+            std::string showLabel = std::string("Show##") + a_name;
             std::string xLabel = std::string("X offset##") + a_name;
             std::string yLabel = std::string("Y offset##") + a_name;
             std::string scaleLabel = std::string("Scale##") + a_name;
             std::string layerLabel = std::string("Layer##") + a_name;
 
+            changed |= ImGuiMCP::Checkbox(showLabel.c_str(), &a_module.visible);
             ImGuiMCP::SetNextItemWidth(360.0f);
             changed |= ImGuiMCP::SliderInt(xLabel.c_str(), &a_module.x, -1000, 1000, "%d px");
             ImGuiMCP::SetNextItemWidth(360.0f);
@@ -679,7 +784,14 @@ namespace
         moduleControls("Magicka Bar", g_config.magickaBar);
         moduleControls("Stamina", g_config.stamina);
         moduleControls("Charges", g_config.charges);
-        moduleControls("Level", g_config.level);
+
+        ImGuiMCP::Separator();
+        ImGuiMCP::Text("Level layers");
+        moduleControls("Level - Blank BG", g_config.levelBlank);
+        moduleControls("Level - XP Fill", g_config.levelFill);
+        moduleControls("Level - Available", g_config.levelAvailable);
+        moduleControls("Level - Plate", g_config.levelPlate);
+        moduleControls("Level - Number", g_config.levelNumber);
 
         if (changed) {
             CommitMenuChange();
@@ -692,21 +804,25 @@ namespace
             g_config.left = 574;
             g_config.bottom = 32;
             g_config.scale = 100;
-            g_config.healthText = { 0, 0, 100, 20 };
-            g_config.healthBar = { 0, 0, 100, 10 };
-            g_config.magickaText = { 0, 0, 100, 20 };
-            g_config.magickaBar = { 0, 0, 100, 10 };
-            g_config.stamina = { 0, 0, 100, 10 };
-            g_config.charges = { 0, 0, 100, 12 };
-            g_config.level = { 0, 0, 100, 30 };
-            g_config.layoutVersion = 4;
+            g_config.healthText = { 0, 0, 100, 20, true };
+            g_config.healthBar = { 0, 0, 100, 10, true };
+            g_config.magickaText = { 0, 0, 100, 20, true };
+            g_config.magickaBar = { 0, 0, 100, 10, true };
+            g_config.stamina = { 0, 0, 100, 10, true };
+            g_config.charges = { 0, 0, 100, 12, true };
+            g_config.levelBlank = { 0, 0, 100, 10, true };
+            g_config.levelFill = { 0, 0, 100, 12, true };
+            g_config.levelAvailable = { 0, 0, 100, 14, true };
+            g_config.levelPlate = { 0, 0, 100, 20, true };
+            g_config.levelNumber = { 0, 0, 100, 30, true };
+            g_config.layoutVersion = 5;
             CommitMenuChange();
         }
 
         ImGuiMCP::Separator();
         ImGuiMCP::TextWrapped(
-            "When the layout looks right, send me HelluvaHUD.user.ini from MO2 Overwrite\\SKSE\\Plugins. "
-            "Those offsets will become the locked default composition.");
+            "When the layout is correct, send HelluvaHUD.user.ini from MO2 Overwrite\\SKSE\\Plugins. "
+            "Every Show/X/Y/Scale/Layer value will be preserved as the final default composition.");
     }
 
     void RegisterMenuFramework()
@@ -813,6 +929,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HelluvaHUD v0.3.3 seven-module calibration HUD loaded");
+    SKSE::log::info("HelluvaHUD v0.3.4 level-layer calibration HUD loaded");
     return true;
 }
