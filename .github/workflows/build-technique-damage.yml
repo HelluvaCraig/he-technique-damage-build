@@ -67,5 +67,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.6.5-covering-fire-stamina
+          name: HE_TechniqueDamage-v0.6.6-covering-fire-activation-gate
           path: artifact
