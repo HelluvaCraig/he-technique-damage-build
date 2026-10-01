@@ -9,6 +9,7 @@ namespace
     constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
     constexpr auto kRimSkillsPlugin = "EldenSkyrim_RimSkills.esp";
     constexpr auto kEldenSkyrimPlugin = "EldenSkyrim.esp";
+    constexpr RE::FormID kCoveringFireActivationSpellLocalID = 0x0BA9B;
     constexpr RE::FormID kTechniqueMarkerLocalID = 0x920;
     constexpr RE::FormID kMagicCandidatePrimaryLocalID = 0x800;
     constexpr RE::FormID kMagicCandidateSecondaryLocalID = 0x805;
@@ -121,6 +122,7 @@ namespace
     RE::SpellItem* g_radiantBladeDanceSpell150 = nullptr;
     RE::SpellItem* g_radiantBladeDanceFinal = nullptr;
     RE::SpellItem* g_radiantCarianImpactSpell = nullptr;
+    RE::SpellItem* g_coveringFireActivationSpell = nullptr;
 
     RE::TESGlobal* g_techniqueChargesGlobal = nullptr;
     RE::TESGlobal* g_techniqueMaxChargesGlobal = nullptr;
@@ -1827,7 +1829,6 @@ namespace
                     if (button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
                         button->GetIDCode() == kTechniqueInputKeyCode) {
                         ArmPhysicalTechniqueStaminaRefund(player);
-                        SpendCoveringFireStamina(player);
                         break;
                     }
                 }
@@ -1988,6 +1989,12 @@ namespace
 
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!player) {
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+            if (g_coveringFireActivationSpell &&
+                a_event->spell == g_coveringFireActivationSpell->GetFormID()) {
+                SpendCoveringFireStamina(player);
                 return RE::BSEventNotifyControl::kContinue;
             }
 
@@ -2467,6 +2474,8 @@ namespace
             kRadiantBladeDanceFinalLocalID, kRimSkillsPlugin);
         g_radiantCarianImpactSpell = dataHandler->LookupForm<RE::SpellItem>(
             kRadiantCarianImpactSpellLocalID, kRimSkillsPlugin);
+        g_coveringFireActivationSpell = dataHandler->LookupForm<RE::SpellItem>(
+            kCoveringFireActivationSpellLocalID, kRimSkillsPlugin);
 
         g_techniqueMarker = dataHandler->LookupForm<RE::EffectSetting>(kTechniqueMarkerLocalID, kCooldownPlugin);
         g_magicCandidatePrimary = dataHandler->LookupForm<RE::EffectSetting>(kMagicCandidatePrimaryLocalID, kCooldownPlugin);
@@ -2526,6 +2535,9 @@ namespace
         SKSE::log::info(
             "Radiant finisher spell: CarianImpact={}",
             g_radiantCarianImpactSpell ? "OK" : "MISSING");
+        SKSE::log::info(
+            "Covering Fire activation spell: {}",
+            g_coveringFireActivationSpell ? "OK" : "MISSING");
         ResolveBatchMagicPayloads(dataHandler);
         ResolveTempestCrescentDamagePayloads(dataHandler);
         ResolveRadiantFinisherDamagePayloads(dataHandler);
@@ -2652,6 +2664,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.5 Covering Fire stamina balance loaded");
+    SKSE::log::info("HE Technique Damage v0.6.6 Covering Fire activation-gated stamina loaded");
     return true;
 }
