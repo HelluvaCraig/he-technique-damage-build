@@ -163,6 +163,12 @@ namespace
     // Attacks never emit that rank signal and therefore keep their Stamina cost.
     constexpr std::uint32_t kTechniqueInputKeyCode = 0x2F;  // keyboard V scan code
     constexpr float kMaxPhysicalTechniqueStaminaRefund = 250.0f;
+
+    // Built-in Bow Additional Attack (Covering Fire) uses the separate DKAF
+    // ranged bridge and therefore bypasses AABL's normal stamina-cost spell.
+    // Charge it here at the same base cost as the current normal 1H sword
+    // power-attack class in the built-in balance table.
+    constexpr float kCoveringFireBaseStaminaCost = 55.0f;
     bool g_physicalStaminaRefundArmed = false;
     float g_physicalStaminaSnapshot = 0.0f;
     std::chrono::steady_clock::time_point g_physicalStaminaSnapshotTime{};
@@ -360,6 +366,55 @@ namespace
             }
         }
         return nullptr;
+    }
+
+    bool HasAnyTechniqueStone(RE::Actor* a_actor)
+    {
+        return GetEquippedPhysicalStone(a_actor) != nullptr ||
+               GetEquippedMagicStone(a_actor) != nullptr;
+    }
+
+    bool IsBowEquippedRight(RE::Actor* a_actor)
+    {
+        if (!a_actor) {
+            return false;
+        }
+
+        auto* equipped = a_actor->GetEquippedObject(false);
+        auto* weapon = equipped ? equipped->As<RE::TESObjectWEAP>() : nullptr;
+        return weapon && weapon->IsBow();
+    }
+
+    void SpendCoveringFireStamina(RE::Actor* a_actor)
+    {
+        if (!a_actor || HasAnyTechniqueStone(a_actor) || !IsBowEquippedRight(a_actor)) {
+            return;
+        }
+
+        auto* avOwner = a_actor->AsActorValueOwner();
+        if (!avOwner) {
+            return;
+        }
+
+        const float before = avOwner->GetActorValue(RE::ActorValue::kStamina);
+        if (!std::isfinite(before) || before <= 0.0f) {
+            return;
+        }
+
+        // Match normal power-attack behaviour at low Stamina by spending the
+        // remaining amount rather than forcing the ActorValue below zero.
+        const float spent = std::min(before, kCoveringFireBaseStaminaCost);
+        avOwner->RestoreActorValue(
+            RE::ACTOR_VALUE_MODIFIER::kDamage,
+            RE::ActorValue::kStamina,
+            -spent);
+
+        const float after = avOwner->GetActorValue(RE::ActorValue::kStamina);
+        SKSE::log::info(
+            "[COVERING FIRE STAMINA] before={:.2f} spent={:.2f} after={:.2f}",
+            before,
+            spent,
+            after);
     }
 
     bool TechniqueMarkerActive(RE::Actor* a_actor)
@@ -1772,6 +1827,7 @@ namespace
                     if (button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
                         button->GetIDCode() == kTechniqueInputKeyCode) {
                         ArmPhysicalTechniqueStaminaRefund(player);
+                        SpendCoveringFireStamina(player);
                         break;
                     }
                 }
@@ -2596,6 +2652,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.4 Charge progression 1/10/20/30/40 loaded");
+    SKSE::log::info("HE Technique Damage v0.6.5 Covering Fire stamina balance loaded");
     return true;
 }
