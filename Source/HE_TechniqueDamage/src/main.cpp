@@ -6,7 +6,7 @@
 namespace
 {
     constexpr auto kStonePlugin = "HE Elden Rim - Ash Rings.esp";
-    constexpr auto kCooldownPlugin = "HE Elden Rim - Ash Cooldown.esp";
+    constexpr auto kCooldownPlugin = "HE Elden Rim - Technique Runtime.esp";
     constexpr auto kRimSkillsPlugin = "EldenSkyrim_RimSkills.esp";
     constexpr auto kEldenSkyrimPlugin = "EldenSkyrim.esp";
     constexpr RE::FormID kCoveringFireActivationSpellLocalID = 0x0BA9B;
@@ -2664,6 +2664,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
         return false;
     }
 
-    SKSE::log::info("HE Technique Damage v0.6.6 Covering Fire activation-gated stamina loaded");
+    SKSE::log::info("HE Technique Damage v0.6.7 consolidated runtime plugin loaded");
     return true;
 }
