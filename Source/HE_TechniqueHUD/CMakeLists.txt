@@ -1,14 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
-project(HE_TechniqueDamage VERSION 0.6.7 LANGUAGES CXX)
+project(HelluvaHUD VERSION 0.3.8 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 
 set(SOURCES
     src/main.cpp
     src/pch.h
-    src/PrecisionAPI.h
-    src/TechniqueDamageMap.h
-    src/MagicTechniqueMap.h
+    src/StoneMap.h
 )
 
 add_commonlibsse_plugin(${PROJECT_NAME}

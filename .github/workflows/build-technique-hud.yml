@@ -1,22 +1,22 @@
-name: Build HE Technique Damage
+name: Build HelluvaHUD
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'Source/HE_TechniqueDamage/**'
-      - '.github/workflows/build-technique-damage.yml'
+      - 'Source/HE_TechniqueHUD/**'
+      - '.github/workflows/build-technique-hud.yml'
   push:
     paths:
-      - 'Source/HE_TechniqueDamage/**'
-      - '.github/workflows/build-technique-damage.yml'
+      - 'Source/HE_TechniqueHUD/**'
+      - '.github/workflows/build-technique-hud.yml'
 
 jobs:
   build:
     runs-on: windows-2022
     defaults:
       run:
-        working-directory: Source/HE_TechniqueDamage
+        working-directory: Source/HE_TechniqueHUD
 
     steps:
       - uses: actions/checkout@v4
@@ -26,11 +26,10 @@ jobs:
         with:
           arch: x64
 
-      - name: Verify compiler
+      - name: Download PrismaUI API header
         shell: pwsh
         run: |
-          where.exe cl
-          cl 2>&1 | Select-Object -First 3
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/PrismaUI-SKSE/example-skse-plugin/main/src/PrismaUI_API.h' -OutFile 'src/PrismaUI_API.h'
 
       - name: Cache vcpkg binaries
         uses: actions/cache@v4
@@ -55,17 +54,20 @@ jobs:
           VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
         run: cmake --build --preset release
 
-      - name: Stage DLL
+      - name: Stage HUD
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path '..\..\artifact\SKSE\Plugins' | Out-Null
-          Copy-Item 'build\release\HE_TechniqueDamage.dll' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.dll'
-          if (Test-Path 'build\release\HE_TechniqueDamage.pdb') {
-            Copy-Item 'build\release\HE_TechniqueDamage.pdb' '..\..\artifact\SKSE\Plugins\HE_TechniqueDamage.pdb'
+          New-Item -ItemType Directory -Force -Path '..\..\artifact\PrismaUI\views\HelluvaHUD' | Out-Null
+          Copy-Item 'build\release\HelluvaHUD.dll' '..\..\artifact\SKSE\Plugins\HelluvaHUD.dll'
+          Copy-Item 'package\HelluvaHUD.ini' '..\..\artifact\SKSE\Plugins\HelluvaHUD.ini'
+          Copy-Item 'ui\index.html' '..\..\artifact\PrismaUI\views\HelluvaHUD\index.html'
+          if (Test-Path 'build\release\HelluvaHUD.pdb') {
+            Copy-Item 'build\release\HelluvaHUD.pdb' '..\..\artifact\SKSE\Plugins\HelluvaHUD.pdb'
           }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HE_TechniqueDamage-v0.6.7-consolidated-runtime
+          name: HelluvaHUD-v0.3.8-level-available-fix
           path: artifact

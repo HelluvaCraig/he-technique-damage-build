@@ -1,0 +1,376 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html,body{
+  width:100%;height:100%;margin:0;overflow:hidden;
+  background:transparent;pointer-events:none;
+}
+:root{--left:574px;--bottom:32px}
+*{box-sizing:border-box}
+
+#widget{
+  position:fixed;
+  left:var(--left);
+  bottom:var(--bottom);
+  width:772px;
+  height:68px;
+  transform-origin:left bottom;
+  opacity:0;
+  z-index:10;
+  transition:opacity .28s cubic-bezier(.22,.61,.36,1);
+  will-change:opacity;
+}
+#widget.visible{opacity:1}
+#widget.instant{transition:none!important}
+
+.statsText{
+  font-family:"El Messiri","Times New Roman",serif;
+  font-weight:700;
+  line-height:1.3;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.currentValue{
+  font-size:20px;
+  letter-spacing:1.8px;
+  color:#e2d6c0;
+}
+.maxValue{
+  font-size:16px;
+  letter-spacing:1.44px;
+  color:#988d7a;
+}
+.separator{
+  width:4px;height:4px;flex:0 0 4px;
+  object-fit:contain;
+}
+.statIcon{
+  width:22px;height:22px;flex:0 0 22px;
+  object-fit:contain;
+}
+.statNumbers{
+  height:22px;
+  display:flex;
+  gap:4px;
+  align-items:center;
+}
+#healthNumbers{
+  position:absolute;
+  left:190px;top:0;
+  width:146px;height:22px;
+  justify-content:flex-end;
+}
+#magickaNumbers{
+  position:absolute;
+  left:436px;top:0;
+  width:129px;height:22px;
+  justify-content:flex-start;
+}
+
+.resourceBar{
+  position:absolute;
+  width:336px;height:30px;
+}
+#healthBar{left:0;top:26px}
+#magickaBar{left:436px;top:26px}
+.resourceBar img{
+  position:absolute;inset:0;
+  width:336px;height:30px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+.resourceFill{
+  transition:clip-path .09s linear;
+  will-change:clip-path;
+}
+#healthFill{clip-path:inset(0 0 0 0)}
+#magickaFill{clip-path:inset(0 0 0 0)}
+
+#staminaBar{
+  position:absolute;
+  left:6px;top:57px;
+  width:323px;height:11px;
+}
+#staminaBar img{
+  position:absolute;inset:0;
+  width:323px;height:11px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#staminaFill{
+  transition:clip-path .09s linear;
+  clip-path:inset(0 0 0 0);
+  will-change:clip-path;
+}
+
+#levelBadge{
+  position:absolute;
+  left:355px;top:4px;
+  width:62px;height:60px;
+}
+#levelEmpty,#levelFill{
+  position:absolute;
+  left:12.31px;top:0;
+  width:37.37px;height:60px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#levelFill{
+  clip-path:inset(100% 0 0 0);
+  transition:clip-path .12s linear;
+  will-change:clip-path;
+}
+#levelPaper{
+  position:absolute;inset:0;
+  width:62px;height:60px;
+  object-fit:fill;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+#levelNumber{
+  position:absolute;
+  left:50%;top:50%;
+  transform:translate(-50%,-52%);
+  width:40px;
+  text-align:center;
+  font-family:"El Messiri","Times New Roman",serif;
+  font-weight:700;
+  font-size:20px;
+  line-height:1.4;
+  letter-spacing:0;
+  color:#4a4335;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+#charges{
+  position:absolute;
+  left:442px;top:58px;
+  display:flex;
+  width:240px;height:10px;
+  gap:0;
+}
+.charge{
+  position:relative;
+  width:48px;height:10px;
+  flex:0 0 48px;
+  overflow:hidden;
+}
+.charge img{
+  position:absolute;inset:0;
+  width:48px;height:10px;
+  display:block;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+}
+.charge .locked{opacity:1}
+.charge .empty{opacity:0}
+.charge .fill{
+  opacity:0;
+  clip-path:inset(0 100% 0 0);
+  transition:clip-path .085s linear,opacity .12s ease,filter .16s ease;
+}
+.charge.unlocked .locked{opacity:0}
+.charge.unlocked .empty{opacity:1}
+.charge.available .fill{opacity:1;clip-path:inset(0 0 0 0);filter:drop-shadow(0 0 2px rgba(214,176,86,.42))}
+.charge.recharging .fill{opacity:1;filter:drop-shadow(0 0 2px rgba(214,176,86,.32))}
+.charge.unlocking .fill{
+  transition:clip-path .7s cubic-bezier(.16,.78,.24,1),opacity .12s ease,filter .7s ease;
+  filter:drop-shadow(0 0 4px rgba(229,192,101,.78));
+}
+</style>
+</head>
+<body>
+<div id="widget" aria-label="HelluvaHUD Core Stats">
+  <div id="healthNumbers" class="statNumbers">
+    <span id="healthMax" class="statsText maxValue">100</span>
+    <img class="separator" src="assets/separator.png" alt="">
+    <span id="healthCurrent" class="statsText currentValue">100</span>
+    <img class="statIcon" src="assets/health_icon.png" alt="">
+  </div>
+
+  <div id="healthBar" class="resourceBar">
+    <img src="assets/hp_mp_bg.png" alt="">
+    <img id="healthFill" class="resourceFill" src="assets/hp_fill.png" alt="">
+  </div>
+
+  <div id="levelBadge">
+    <img id="levelEmpty" src="assets/lvl_empty.png" alt="">
+    <img id="levelFill" src="assets/lvl_fill.png" alt="">
+    <img id="levelPaper" src="assets/lvl_bg.png" alt="">
+    <div id="levelNumber">1</div>
+  </div>
+
+  <div id="magickaNumbers" class="statNumbers">
+    <img class="statIcon" src="assets/magicka_icon.png" alt="">
+    <span id="magickaCurrent" class="statsText currentValue">100</span>
+    <img class="separator" src="assets/separator.png" alt="">
+    <span id="magickaMax" class="statsText maxValue">100</span>
+  </div>
+
+  <div id="magickaBar" class="resourceBar">
+    <img src="assets/hp_mp_bg.png" alt="">
+    <img id="magickaFill" class="resourceFill" src="assets/mp_fill.png" alt="">
+  </div>
+
+  <div id="staminaBar">
+    <img src="assets/stamina_bg.png" alt="">
+    <img id="staminaFill" src="assets/stamina_fill.png" alt="">
+  </div>
+
+  <div id="charges"></div>
+</div>
+
+<script>
+(()=>{
+  const widget=document.getElementById("widget");
+  const healthFill=document.getElementById("healthFill");
+  const magickaFill=document.getElementById("magickaFill");
+  const staminaFill=document.getElementById("staminaFill");
+  const levelFill=document.getElementById("levelFill");
+  const levelNumber=document.getElementById("levelNumber");
+  const healthCurrent=document.getElementById("healthCurrent");
+  const healthMax=document.getElementById("healthMax");
+  const magickaCurrent=document.getElementById("magickaCurrent");
+  const magickaMax=document.getElementById("magickaMax");
+  const chargesRoot=document.getElementById("charges");
+  const chargeNodes=[];
+  let lastMax=null;
+
+  function clamp(v,lo,hi){
+    const n=Number(v);
+    return Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):lo;
+  }
+  function pct(current,max){
+    return max>0?clamp(current/max,0,1):0;
+  }
+  function intText(v){
+    const n=Number(v);
+    return Number.isFinite(n)?String(Math.max(0,Math.round(n))):"0";
+  }
+
+  function makeCharge(i){
+    const root=document.createElement("div");
+    root.className="charge";
+    root.dataset.index=String(i);
+
+    const locked=document.createElement("img");
+    locked.className="locked";
+    locked.src="assets/charge_locked.png";
+
+    const empty=document.createElement("img");
+    empty.className="empty";
+    empty.src="assets/charge_empty.png";
+
+    const fill=document.createElement("img");
+    fill.className="fill";
+    fill.src="assets/charge_fill.png";
+
+    root.append(locked,empty,fill);
+    chargesRoot.appendChild(root);
+    return {root,fill};
+  }
+  for(let i=0;i<5;i++) chargeNodes.push(makeCharge(i));
+
+  function setLayout(left,bottom,scale){
+    document.documentElement.style.setProperty("--left",clamp(left,0,4000)+"px");
+    document.documentElement.style.setProperty("--bottom",clamp(bottom,0,4000)+"px");
+    widget.style.transform="scale("+(clamp(scale,50,250)/100)+")";
+  }
+
+  function setVisible(visible,instant=false){
+    if(instant){
+      widget.classList.add("instant");
+      widget.classList.toggle("visible",!!visible);
+      widget.offsetWidth;
+      requestAnimationFrame(()=>widget.classList.remove("instant"));
+      return;
+    }
+    widget.classList.toggle("visible",!!visible);
+  }
+
+  function setChargeFill(node,amount,instant=false){
+    const p=clamp(amount,0,1);
+    const clip="inset(0 "+((1-p)*100).toFixed(2)+"% 0 0)";
+    if(instant){
+      const old=node.fill.style.transition;
+      node.fill.style.transition="none";
+      node.fill.style.clipPath=clip;
+      node.fill.offsetWidth;
+      node.fill.style.transition=old;
+    }else{
+      node.fill.style.clipPath=clip;
+    }
+  }
+
+  function renderCharges(state){
+    const current=Math.max(0,Math.min(5,Math.round(Number(state.chargesCurrent)||0)));
+    const max=Math.max(0,Math.min(5,Math.round(Number(state.chargesMax)||0)));
+    const progress=clamp(state.chargeProgress||0,0,1);
+    const previous=lastMax;
+    const increased=previous!==null&&max>previous;
+
+    chargeNodes.forEach((n,i)=>{
+      const unlocked=i<max;
+      const available=unlocked&&i<current;
+      const recharging=unlocked&&i===current&&current<max;
+      n.root.classList.toggle("unlocked",unlocked);
+      n.root.classList.toggle("available",available);
+      n.root.classList.toggle("recharging",recharging);
+
+      const amount=available?1:(recharging?progress:0);
+      const newly=increased&&i>=previous&&i<max;
+      if(newly){
+        n.root.classList.add("unlocking");
+        setChargeFill(n,0,true);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>setChargeFill(n,amount)));
+        setTimeout(()=>n.root.classList.remove("unlocking"),850);
+      }else{
+        setChargeFill(n,amount);
+      }
+    });
+    lastMax=max;
+  }
+
+  function render(state){
+    state=state||{};
+
+    const hp=pct(Number(state.healthCurrent)||0,Number(state.healthMax)||1);
+    const mp=pct(Number(state.magickaCurrent)||0,Number(state.magickaMax)||1);
+    const sp=pct(Number(state.staminaCurrent)||0,Number(state.staminaMax)||1);
+
+    // Figma mirrors the two primary resource bars toward the centre:
+    // Health stays anchored to the right edge; Magicka to the left edge.
+    healthFill.style.clipPath="inset(0 0 0 "+((1-hp)*100).toFixed(2)+"%)";
+    magickaFill.style.clipPath="inset(0 "+((1-mp)*100).toFixed(2)+"% 0 0)";
+    staminaFill.style.clipPath="inset(0 "+((1-sp)*100).toFixed(2)+"% 0 0)";
+
+    healthCurrent.textContent=intText(state.healthCurrent);
+    healthMax.textContent=intText(state.healthMax);
+    magickaCurrent.textContent=intText(state.magickaCurrent);
+    magickaMax.textContent=intText(state.magickaMax);
+
+    const xp=clamp(state.xpProgress||0,0,1);
+    levelFill.style.clipPath="inset("+((1-xp)*100).toFixed(2)+"% 0 0 0)";
+    levelNumber.textContent=intText(state.level||1);
+
+    renderCharges(state);
+  }
+
+  window.HelluvaHUD={
+    setLayout,
+    setVisible,
+    setState:render
+  };
+
+  render({
+    healthCurrent:100,healthMax:100,
+    magickaCurrent:100,magickaMax:100,
+    staminaCurrent:100,staminaMax:100,
+    level:1,xpProgress:0,
+    chargesCurrent:0,chargesMax:0,chargeProgress:0
+  });
+})();
+</script>
+</body>
+</html>
